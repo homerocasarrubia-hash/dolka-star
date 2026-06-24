@@ -1,0 +1,27 @@
+@import url("https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --red-primary: #e2393c;
+  --red-logo: #fe0000;
+  --cream: #eee7d4;
+  --ink: #0b1014;
+}
+
+body {
+  background-color: var(--cream);
+  color: var(--ink);
+  font-family: "Inter", sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: "Anton", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
