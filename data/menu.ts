@@ -122,12 +122,12 @@ export const menu: MenuCategoria[] = [
   {
     id: "picadas",
     label: "Picadas",
-    nota: "Para compartir — caliente y fría",
+    nota: "Para 3 personas — caliente y fría",
     items: [
       {
         nombre: "Picada Dolka",
         descripcion: "Variedad de fiambres, 4 quesos, aceitunas, pollo frito, milanesas, lactonesa, barbacoa, tomates cherry",
-        precio: 17500,
+        precio: 20000,
       },
     ],
   },
