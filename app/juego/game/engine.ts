@@ -565,6 +565,11 @@ export interface GameOptions {
    * estuvo efectivamente jugando hasta el choque.
    */
   onGameOver?: (score: number, durationMs: number) => void;
+  /**
+   * Excepción no atrapada dentro del loop. Se avisa una sola vez y el loop
+   * queda frenado: quien lo reciba decide qué mostrar.
+   */
+  onError?: (error: Error) => void;
 }
 
 export interface Game {
@@ -589,9 +594,8 @@ export function createGame(ctx: CanvasRenderingContext2D, options: GameOptions =
   let fpsFrames = 0;
   let fpsWindow = 0;
 
-  const frame = (now: number) => {
-    rafId = requestAnimationFrame(frame);
-
+  /** Un frame de reloj: adelanta la lógica lo que haga falta y dibuja una vez. */
+  const runFrame = (now: number) => {
     // Tiempo real transcurrido, acotado para que una pestaña en segundo plano
     // no dispare cientos de updates de golpe al volver.
     const frameTime = Math.min((now - last) / 1000, MAX_FRAME_TIME);
@@ -619,6 +623,21 @@ export function createGame(ctx: CanvasRenderingContext2D, options: GameOptions =
     }
 
     render(ctx, state);
+  };
+
+  const frame = (now: number) => {
+    rafId = requestAnimationFrame(frame);
+    try {
+      runFrame(now);
+    } catch (err) {
+      // Un throw acá no lo ve ningún error boundary de React: rAF corre fuera
+      // del árbol, así que el error sale como error global del navegador y el
+      // loop sigue girando y volviendo a tirar en cada frame. Lo cortamos y se
+      // lo devolvemos a React para que lo levante el boundary de la ruta.
+      running = false;
+      cancelAnimationFrame(rafId);
+      options.onError?.(err instanceof Error ? err : new Error(String(err)));
+    }
   };
 
   return {
