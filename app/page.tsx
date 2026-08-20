@@ -38,6 +38,12 @@ export default function HomePage() {
               >
                 CONTACTO
               </Link>
+              <Link
+                href="/club"
+                className="bg-gold text-white font-display text-lg px-8 py-3 rounded hover:bg-gold/90 transition-colors"
+              >
+                DOLKA CLUB
+              </Link>
             </div>
           </div>
 

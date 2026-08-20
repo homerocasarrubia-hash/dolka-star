@@ -20,6 +20,7 @@
 | `--cream` | `#EEE7D4` | Fondo cálido principal (alternativa al blanco puro) |
 | `--ink` | `#0B1014` | Texto principal, footer |
 | `--white` | `#FFFFFF` | Texto sobre rojo, fondos secundarios |
+| `--gold` | `#D4AF37` | CTA del Club Dolka Star |
 
 ### Tipografía
 - **Títulos:** fuente display condensada y bold en mayúsculas, tipo *Anton*, *Bebas Neue* u *Oswald 700* (mismo espíritu que el logo).

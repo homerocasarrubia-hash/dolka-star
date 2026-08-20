@@ -12,6 +12,7 @@ const config: Config = {
         "red-logo": "#FE0000",
         cream: "#EEE7D4",
         ink: "#0B1014",
+        gold: "#D4AF37",
       },
       fontFamily: {
         display: ["Anton", "Oswald", "sans-serif"],
