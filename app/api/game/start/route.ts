@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { MAX_SESSIONS_PER_IP, RATE_LIMIT_WINDOW_MS } from '@/lib/game/server-config';
+import { validarPlayerId } from '@/lib/game/validation';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,15 @@ function ipDe(request: Request): string | null {
 }
 
 export async function POST(request: Request) {
+  // El playerId entra acá y queda pegado a la sesión. El finish lo lee de la
+  // sesión y no del cuerpo del pedido, así nadie cambia de identidad después
+  // de haber jugado.
+  const body: unknown = await request.json().catch(() => null);
+  const vPlayer = validarPlayerId((body as { playerId?: unknown })?.playerId);
+  if ('error' in vPlayer) {
+    return NextResponse.json({ error: vPlayer.error }, { status: 400 });
+  }
+
   const ip = ipDe(request);
   const userAgent = request.headers.get('user-agent')?.slice(0, 500) ?? null;
 
@@ -36,7 +46,7 @@ export async function POST(request: Request) {
   }
 
   const session = await prisma.gameSession.create({
-    data: { ip, userAgent },
+    data: { ip, userAgent, playerId: vPlayer.playerId },
     select: { id: true },
   });
 

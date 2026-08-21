@@ -2,7 +2,8 @@
 // cortan en la primera que falla, con un mensaje que se pueda mostrar tal cual.
 //
 // Nada de lo que decide si el puntaje es válido viene del cliente: la duración
-// sale de restar contra startedAt y la semana del reloj del servidor.
+// sale de restar contra startedAt, la semana del reloj del servidor y la
+// identidad de la sesión, no del cuerpo del pedido.
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
@@ -21,6 +22,86 @@ function malPedido(mensaje: string) {
   return NextResponse.json({ error: mensaje }, { status: 400 });
 }
 
+function esConflictoDeUnico(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002'
+  );
+}
+
+interface Resultado {
+  improved: boolean;
+  bestScore: number;
+}
+
+/**
+ * Guarda el mejor puntaje de la semana para este jugador.
+ *
+ * Hay una sola fila por jugador y semana, garantizada por el @@unique. La
+ * comparación "solo si mejora" va dentro del WHERE del update y no en un
+ * if previo, para que dos envíos simultáneos no se pisen: la base decide.
+ */
+async function guardarMejorDeLaSemana(datos: {
+  playerId: string;
+  weekStart: Date;
+  score: number;
+  playerName: string;
+  whatsapp: string | null;
+  sessionId: string;
+}): Promise<Resultado> {
+  const { playerId, weekStart, score, playerName, whatsapp, sessionId } = datos;
+
+  // El nombre se actualiza junto con el puntaje, así el ranking muestra el
+  // último que eligió. El WhatsApp solo se pisa si vino uno nuevo: mandar el
+  // campo vacío no tiene por qué borrar el que ya había.
+  const cambios = {
+    score,
+    playerName,
+    sessionId,
+    ...(whatsapp === null ? {} : { whatsapp }),
+  };
+
+  // Un solo statement: actualiza únicamente si el puntaje nuevo supera al guardado.
+  const mejorado = await prisma.score.updateMany({
+    where: { playerId, weekStart, score: { lt: score } },
+    data: cambios,
+  });
+  if (mejorado.count > 0) return { improved: true, bestScore: score };
+
+  // No mejoró: o la fila existe y es mejor, o todavía no existe.
+  const existente = await prisma.score.findUnique({
+    where: { playerId_weekStart: { playerId, weekStart } },
+    select: { score: true },
+  });
+  if (existente) return { improved: false, bestScore: existente.score };
+
+  try {
+    await prisma.score.create({
+      data: { playerId, weekStart, score, playerName, whatsapp, sessionId },
+      select: { id: true },
+    });
+    return { improved: true, bestScore: score };
+  } catch (error) {
+    if (!esConflictoDeUnico(error)) throw error;
+
+    // Carrera: otro envío del mismo jugador creó la fila entre el findUnique y
+    // el create. Se rehace la comparación contra lo que quedó.
+    const ganadora = await prisma.score.findUnique({
+      where: { playerId_weekStart: { playerId, weekStart } },
+      select: { score: true },
+    });
+    if (!ganadora) throw error;
+    if (ganadora.score >= score) return { improved: false, bestScore: ganadora.score };
+
+    const reintento = await prisma.score.updateMany({
+      where: { playerId, weekStart, score: { lt: score } },
+      data: cambios,
+    });
+    return reintento.count > 0
+      ? { improved: true, bestScore: score }
+      : { improved: false, bestScore: ganadora.score };
+  }
+}
+
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -35,14 +116,16 @@ export async function POST(request: Request) {
     return malPedido('Falta el identificador de la partida.');
   }
 
-  // 1. La sesión existe y todavía no tiene puntaje.
+  // 1. La sesión existe y todavía no se cerró. `finishedAt` es el anti-reenvío:
+  //    la fila de Score ya no sirve para eso porque la comparten varias sesiones.
   const session = await prisma.gameSession.findUnique({
     where: { id: sessionId },
-    select: { id: true, startedAt: true, score: { select: { id: true } } },
+    select: { id: true, startedAt: true, finishedAt: true, playerId: true },
   });
 
   if (!session) return malPedido('Esa partida no existe.');
-  if (session.score) return malPedido('Esa partida ya tiene un puntaje registrado.');
+  if (session.finishedAt) return malPedido('Esa partida ya fue registrada.');
+  if (!session.playerId) return malPedido('Esa partida se abrió sin identificar al jugador.');
 
   // 2. Duración real, medida contra el reloj del servidor.
   const duracionSegundos = (Date.now() - session.startedAt.getTime()) / 1000;
@@ -72,39 +155,24 @@ export async function POST(request: Request) {
   const vWhatsapp = validarWhatsapp(whatsapp);
   if ('error' in vWhatsapp) return malPedido(vWhatsapp.error);
 
-  // La semana la fija el servidor, nunca el cliente.
   const weekStart = currentWeekStart();
 
-  try {
-    const guardado = await prisma.$transaction([
-      prisma.score.create({
-        data: {
-          sessionId: session.id,
-          score: vScore.score,
-          playerName: vNombre.nombre,
-          whatsapp: vWhatsapp.whatsapp,
-          weekStart,
-        },
-        select: { id: true, score: true, playerName: true, weekStart: true },
-      }),
-      prisma.gameSession.update({
-        where: { id: session.id },
-        data: { finishedAt: new Date() },
-        select: { id: true },
-      }),
-    ]);
+  const resultado = await guardarMejorDeLaSemana({
+    playerId: session.playerId,
+    weekStart,
+    score: vScore.score,
+    playerName: vNombre.nombre,
+    whatsapp: vWhatsapp.whatsapp,
+    sessionId: session.id,
+  });
 
-    const score = guardado[0];
-    return NextResponse.json({
-      ok: true,
-      score: { id: score.id, score: score.score, playerName: score.playerName },
-    });
-  } catch (error) {
-    // El @unique sobre sessionId es la última línea contra dos envíos
-    // simultáneos de la misma partida, que el chequeo de arriba no ve.
-    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
-      return malPedido('Esa partida ya tiene un puntaje registrado.');
-    }
-    throw error;
-  }
+  // La sesión se cierra pase lo que pase: se jugó y ya no puede reenviarse,
+  // haya mejorado el récord o no.
+  await prisma.gameSession.update({
+    where: { id: session.id },
+    data: { finishedAt: new Date() },
+    select: { id: true },
+  });
+
+  return NextResponse.json(resultado);
 }

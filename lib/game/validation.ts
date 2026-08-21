@@ -59,6 +59,16 @@ export function validarWhatsapp(valor: unknown): { error: string } | { whatsapp:
   return { whatsapp: n };
 }
 
+/** Identidad del jugador: un UUID generado en su navegador. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function validarPlayerId(valor: unknown): { error: string } | { playerId: string } {
+  if (typeof valor !== 'string' || !UUID.test(valor)) {
+    return { error: 'Falta la identificación del jugador.' };
+  }
+  return { playerId: valor.toLowerCase() };
+}
+
 /** Puntaje: entero, positivo y por debajo del tope duro. */
 export function validarScore(valor: unknown, max: number): { error: string } | { score: number } {
   if (typeof valor !== 'number' || !Number.isFinite(valor)) {

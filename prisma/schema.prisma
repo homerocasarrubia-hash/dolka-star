@@ -29,19 +29,32 @@ model GameSession {
   /// Solo para rate limit y auditoría. NUNCA se expone en una respuesta.
   ip        String?
   userAgent String?
+  /// Identidad del jugador, generada en su navegador. Llega en /api/game/start
+  /// y queda pegada a la sesión: el finish la lee de acá y no del cuerpo del
+  /// pedido, así nadie puede cambiar de identidad a mitad de partida.
+  playerId  String?
 
-  score Score?
+  /// La sesión que produjo el mejor puntaje de la semana apunta acá. Es una
+  /// referencia de auditoría, no una relación uno a uno: la fila semanal se
+  /// actualiza desde sesiones distintas a lo largo de la semana.
+  scores Score[]
 
   /// Sostiene el conteo de sesiones por IP en la última hora.
   @@index([ip, startedAt])
 }
 
-/// Puntaje validado. Uno por sesión como máximo: el @unique sobre sessionId es
-/// lo que impide reenviar el mismo resultado dos veces.
+/// Mejor puntaje de un jugador en una semana. Es UNA fila por jugador y semana
+/// que se va actualizando: no un registro por partida.
+///
+/// El anti-reenvío ya no vive acá sino en GameSession.finishedAt, porque una
+/// misma fila la escriben varias sesiones distintas a lo largo de la semana.
 model Score {
   id         String      @id @default(cuid())
-  sessionId  String      @unique
+  /// Sesión que produjo el puntaje vigente. Solo para auditoría.
+  sessionId  String
   session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  /// Identidad del jugador. NUNCA sale en /api/leaderboard.
+  playerId   String
   score      Int
   playerName String
   /// Dato de contacto, opcional. NUNCA sale en /api/leaderboard.
@@ -54,6 +67,10 @@ model Score {
   verified   Boolean     @default(false)
   createdAt  DateTime    @default(now())
 
+  /// Un jugador, una fila por semana. Es la garantía dura contra dos filas del
+  /// mismo jugador, incluso si llegan dos envíos exactamente a la vez.
+  @@unique([playerId, weekStart])
   /// Sostiene el top 20 semanal.
   @@index([weekStart, score(sort: Desc)])
+  @@index([playerId])
 }

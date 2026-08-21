@@ -1,127 +1,153 @@
+// Máquina de pantallas del juego. No dibuja nada del juego en sí: decide qué
+// pantalla se ve y sostiene lo que cruza entre ellas, que es la identidad del
+// jugador, la sesión del servidor y el resultado de la última partida.
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { GAME_HEIGHT, GAME_WIDTH, PALETTE } from './game/config';
-import { createGame, type Game } from './game/engine';
-import { recordRun } from './game/history';
-import { attachInput } from './game/input';
+import { useCallback, useEffect, useState } from 'react';
+import { PALETTE } from './game/config';
+import { mejorPuntaje, obtenerPerfil, obtenerPlayerId, type Perfil } from './game/prefs';
+import ComoSeJuega from './screens/ComoSeJuega';
+import GameCanvas from './screens/GameCanvas';
+import GameOver from './screens/GameOver';
+import Inicio from './screens/Inicio';
+import PerfilScreen from './screens/Perfil';
+import Ranking from './screens/Ranking';
+import Reglas from './screens/Reglas';
+
+type Pantalla =
+  | 'CARGANDO'
+  | 'PERFIL'
+  | 'INICIO'
+  | 'COMO_SE_JUEGA'
+  | 'JUGANDO'
+  | 'GAME_OVER'
+  | 'RANKING'
+  | 'REGLAS';
 
 export default function GameClient() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
-  const gameRef = useRef<Game | null>(null);
-
-  /** Puntaje final: null mientras se está jugando. */
-  const [scoreFinal, setScoreFinal] = useState<number | null>(null);
-
-  /** Excepción del loop, para relanzarla en render y que la agarre error.tsx. */
-  const [fatal, setFatal] = useState<Error | null>(null);
+  // Arranca en CARGANDO porque la identidad vive en localStorage y todavía no
+  // se puede leer: en el render del servidor no existe. Sin este paso la
+  // pantalla de nombre parpadearía en cada visita de alguien que ya lo dio.
+  const [pantalla, setPantalla] = useState<Pantalla>('CARGANDO');
+  const [playerId, setPlayerId] = useState('');
+  const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [score, setScore] = useState(0);
+  const [iniciando, setIniciando] = useState(false);
+  const [errorInicio, setErrorInicio] = useState<string | null>(null);
+  const [mejor, setMejor] = useState(0);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const surface = surfaceRef.current;
-    if (!canvas || !surface) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Sin interpolación: el upscale por CSS tiene que quedar pixelado.
-    ctx.imageSmoothingEnabled = false;
-
-    const game = createGame(ctx, {
-      onGameOver: (score, durationMs) => {
-        setScoreFinal(score);
-        recordRun(score, durationMs); // métricas de prueba, no se muestran
-      },
-      onError: setFatal,
-    });
-    gameRef.current = game;
-
-    const detachInput = attachInput(surface, {
-      onJumpPress: game.pressJump,
-      onJumpRelease: game.releaseJump,
-      onTouchStart: game.touchStart,
-      onTouchDescend: game.touchDescend,
-      onTouchSettle: game.touchSettle,
-      onTouchRelease: game.touchRelease,
-      onTouchCancel: game.touchCancel,
-      onSlide: game.pressSlide,
-      onToggleDebug: game.toggleDebug,
-      onInputKind: game.setInputKind,
-    });
-    game.start();
-
-    return () => {
-      game.stop(); // cancela el rAF pendiente
-      detachInput();
-      gameRef.current = null;
-    };
+    setPlayerId(obtenerPlayerId()); // se genera acá la primera vez
+    const guardado = obtenerPerfil();
+    setPerfil(guardado);
+    setMejor(mejorPuntaje());
+    // Sin nombre todavía: se pide una única vez, antes de la primera partida.
+    setPantalla(guardado ? 'INICIO' : 'PERFIL');
   }, []);
 
-  const reintentar = useCallback(() => {
-    gameRef.current?.restart();
-    setScoreFinal(null);
+  // El récord puede haber cambiado durante la partida.
+  useEffect(() => {
+    if (pantalla === 'INICIO') setMejor(mejorPuntaje());
+  }, [pantalla]);
+
+  /**
+   * La partida no arranca hasta que el servidor registró la sesión: ese
+   * `startedAt` es la referencia contra la que después se valida la duración, y
+   * el playerId queda pegado a la sesión ahí mismo.
+   */
+  const jugar = useCallback(async () => {
+    setIniciando(true);
+    setErrorInicio(null);
+    try {
+      const res = await fetch('/api/game/start', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ playerId }),
+      });
+      const datos: unknown = await res.json().catch(() => null);
+
+      if (!res.ok) {
+        const mensaje =
+          typeof datos === 'object' && datos !== null && typeof (datos as { error?: unknown }).error === 'string'
+            ? (datos as { error: string }).error
+            : 'No se pudo iniciar la partida. Probá de nuevo.';
+        setErrorInicio(mensaje);
+        return;
+      }
+
+      const id = (datos as { sessionId?: unknown })?.sessionId;
+      if (typeof id !== 'string') {
+        setErrorInicio('El servidor respondió algo inesperado. Probá de nuevo.');
+        return;
+      }
+
+      setSessionId(id);
+      setScore(0);
+      setPantalla('JUGANDO');
+    } catch {
+      setErrorInicio('No hay conexión. Revisá internet y probá de nuevo.');
+    } finally {
+      setIniciando(false);
+    }
+  }, [playerId]);
+
+  const terminar = useCallback((puntaje: number) => {
+    setScore(puntaje);
+    setPantalla('GAME_OVER');
   }, []);
 
-  // Relanzar en render es la única forma de que un error nacido en el loop
-  // llegue al error boundary de la ruta.
-  if (fatal) throw fatal;
+  const guardarPerfilYSeguir = useCallback((nuevo: Perfil) => {
+    setPerfil(nuevo);
+    setPantalla('INICIO');
+  }, []);
 
   return (
     // Ocupa el viewport completo por encima del Header/Footer del layout.
     <div
-      ref={surfaceRef}
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
-      // touch-action:none en todo el contenedor: el gesto es del juego, no del scroll.
-      style={{ backgroundColor: PALETTE.frame, touchAction: 'none' }}
+      style={{ backgroundColor: PALETTE.frame }}
     >
-      <canvas
-        ref={canvasRef}
-        width={GAME_WIDTH}
-        height={GAME_HEIGHT}
-        style={{
-          // Escala al alto del viewport manteniendo la relación de aspecto,
-          // sin desbordar a lo ancho en pantallas angostas.
-          width: `min(100vw, calc(100dvh * ${GAME_WIDTH} / ${GAME_HEIGHT}))`,
-          height: 'auto',
-          aspectRatio: `${GAME_WIDTH} / ${GAME_HEIGHT}`,
-          imageRendering: 'pixelated',
-          display: 'block',
-          backgroundColor: '#000000',
-          touchAction: 'none',
-        }}
-      />
-
-      {scoreFinal !== null && (
-        // TODO: pantalla provisoria. Falta arte, animación de entrada y récord.
-        <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-6 text-center"
-          style={{ backgroundColor: 'rgba(13, 7, 22, 0.88)' }}
-        >
-          <p
-            className="text-2xl font-bold tracking-[0.2em]"
-            style={{ color: PALETTE.white }}
-          >
-            GAME OVER
-          </p>
-
-          <p style={{ color: PALETTE.accent }}>
-            <span className="block text-xs tracking-[0.3em] opacity-70">PUNTAJE</span>
-            <span className="text-5xl font-bold tabular-nums">{scoreFinal}</span>
-          </p>
-
-          <button
-            type="button"
-            onClick={reintentar}
-            // autoFocus para que Espacio y Enter reintenten sin tocar la pantalla.
-            autoFocus
-            className="px-6 py-3 text-sm font-bold tracking-[0.2em] transition-opacity hover:opacity-80"
-            style={{ backgroundColor: PALETTE.accent, color: PALETTE.frame }}
-          >
-            REINTENTAR
-          </button>
-        </div>
+      {pantalla === 'PERFIL' && (
+        <PerfilScreen
+          inicial={perfil}
+          onListo={guardarPerfilYSeguir}
+          onCancelar={perfil ? () => setPantalla('INICIO') : undefined}
+        />
       )}
+
+      {pantalla === 'INICIO' && (
+        <Inicio
+          onJugar={jugar}
+          onComoSeJuega={() => setPantalla('COMO_SE_JUEGA')}
+          onRanking={() => setPantalla('RANKING')}
+          onCambiarNombre={() => setPantalla('PERFIL')}
+          cargando={iniciando}
+          error={errorInicio}
+          mejor={mejor}
+          nombre={perfil?.nombre ?? null}
+        />
+      )}
+
+      {pantalla === 'COMO_SE_JUEGA' && <ComoSeJuega onVolver={() => setPantalla('INICIO')} />}
+
+      {pantalla === 'JUGANDO' && <GameCanvas onGameOver={terminar} />}
+
+      {pantalla === 'GAME_OVER' && perfil && (
+        <GameOver
+          score={score}
+          sessionId={sessionId}
+          perfil={perfil}
+          onJugarDeNuevo={jugar}
+          onRanking={() => setPantalla('RANKING')}
+        />
+      )}
+
+      {pantalla === 'RANKING' && (
+        <Ranking onVolver={() => setPantalla('INICIO')} onReglas={() => setPantalla('REGLAS')} />
+      )}
+
+      {pantalla === 'REGLAS' && <Reglas onVolver={() => setPantalla('RANKING')} />}
     </div>
   );
 }

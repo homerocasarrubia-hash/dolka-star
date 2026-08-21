@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import GameClient from './GameClient';
+import { pixelFont } from './font';
 
 export const metadata: Metadata = {
   title: 'Dolka Run',
@@ -9,5 +10,11 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <GameClient />;
+  // La variable de la fuente se declara acá y se hereda por el árbol: el
+  // contenedor del juego es descendiente de este div aunque esté en position fixed.
+  return (
+    <div className={pixelFont.variable}>
+      <GameClient />
+    </div>
+  );
 }
