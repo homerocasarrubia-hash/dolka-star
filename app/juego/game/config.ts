@@ -51,12 +51,46 @@ export const SLIDE_FRAMES = 30;
  */
 export const SLIDE_BUFFER_FRAMES = 12;
 
+/**
+ * Ventana de intención del toque, en frames (~116 ms). ADAPTATIVA: no es una
+ * espera fija, es una gracia que se renueva con cada milímetro que el dedo baja.
+ * La ventana se resuelve cuando el dedo deja de bajar, no cuando se agota un
+ * contador, así un deslizamiento lento no alcanza a disparar el salto.
+ *
+ * El salto en touch no puede dispararse en el touchstart: al deslizar hacia
+ * abajo el jugador brincaba antes de tirarse al piso. Aplica SOLO a touch:
+ * teclado y mouse siguen instantáneos.
+ *
+ * Para un toque puro, sin movimiento, es el retardo real hasta el despegue:
+ * no hay touchmove que renueve la gracia, así que salta en el frame 7.
+ */
+export const TOUCH_INTENT_FRAMES = 7;
+
+/**
+ * Tope duro de la ventana adaptativa (~250 ms). Un dedo que baja muy despacio
+ * podría renovar la gracia indefinidamente y dejar al jugador congelado sin
+ * saltar ni deslizarse. Al llegar acá se resuelve como toque.
+ */
+export const TOUCH_INTENT_MAX_FRAMES = 15;
+
 /** Umbrales para leer un swipe hacia abajo como pedido de slide. */
 export const SWIPE = {
   /** Desplazamiento vertical mínimo, en píxeles de pantalla (no del juego). */
   MIN_DISTANCE_PX: 30,
-  /** Ventana máxima: más lento que esto es un arrastre, no un swipe. */
+  /**
+   * Ventana máxima: más lento que esto es un arrastre, no un swipe.
+   *
+   * Puede ser generosa porque la ventana de intención adaptativa ya evita el
+   * brinco: mientras el dedo baje, el salto no arranca. Un techo corto acá solo
+   * lograba que los gestos lentos dejaran de leerse como swipe.
+   */
   MAX_DURATION_MS: 300,
+  /**
+   * Cuánto puede retroceder el dedo sin que se lea como cambio de dirección.
+   * Sin esta tolerancia, un píxel de temblor a mitad del deslizamiento cerraría
+   * la ventana y devolvería justo el brinco que se quiere evitar.
+   */
+  REVERSE_TOLERANCE_PX: 4,
 } as const;
 
 /**
@@ -139,6 +173,28 @@ export const WORLD = {
  * pista vacía le dan lugar a saltar sin consecuencias.
  */
 export const WARMUP_FRAMES = 300;
+
+/**
+ * Carteles de tutorial, que viven dentro del warmup y no bloquean nada: el
+ * scroll y la rampa siguen corriendo detrás.
+ */
+export const TUTORIAL = {
+  /** Hasta qué frame se muestra el cartel del salto. */
+  JUMP_UNTIL: 150,
+  /** Hasta qué frame el del slide. Coincide con el fin del warmup. */
+  SLIDE_UNTIL: WARMUP_FRAMES,
+  /** Frames de entrada y de salida del fundido. */
+  FADE_FRAMES: 20,
+} as const;
+
+/** Con qué se juega. Se deduce del primer evento recibido, nunca del user agent. */
+export type InputKind = 'touch' | 'desktop';
+
+/** Texto de cada cartel según el input. Editable sin tocar el dibujado. */
+export const TUTORIAL_COPY = {
+  touch: { jump: 'TOCÁ PARA SALTAR', slide: 'DESLIZÁ ABAJO PARA AGACHARTE' },
+  desktop: { jump: 'ESPACIO PARA SALTAR', slide: 'FLECHA ABAJO PARA AGACHARTE' },
+} as const satisfies Record<InputKind, { jump: string; slide: string }>;
 
 /** Píxeles de scroll por punto de puntaje. */
 export const PX_PER_POINT = 13;
@@ -223,6 +279,88 @@ export const SPAWN = {
  * juego. Con la separación mínima nunca hay más de 2 o 3 en pantalla.
  */
 export const OBSTACLE_POOL_SIZE = 8;
+
+// ---------------------------------------------------------------------------
+// Ingredientes y combos
+// ---------------------------------------------------------------------------
+
+export type IngredientType = 'PAN_ABAJO' | 'CARNE' | 'QUESO' | 'PAN_ARRIBA';
+
+/** La hamburguesa se arma de abajo hacia arriba y hay que juntarlos EN ESTE ORDEN. */
+export const INGREDIENT_ORDER = ['PAN_ABAJO', 'CARNE', 'QUESO', 'PAN_ARRIBA'] as const;
+
+/**
+ * Alturas a las que flotan, como y del SPRITE de 24x24.
+ *
+ * Están elegidas por lo que exigen del jugador, no por estética:
+ * - BAJA  (276): se agarra corriendo y también agachado.
+ * - MEDIA (240): corriendo o saltando; agachado NO se llega.
+ * - ALTA  (200): solo saltando. El pico del salto deja los pies en 220.
+ */
+export const INGREDIENT_LANES = {
+  BAJA: GROUND_Y - 24,
+  MEDIA: 240,
+  ALTA: 200,
+} as const;
+
+export type IngredientLane = keyof typeof INGREDIENT_LANES;
+
+/** Puntaje. Todo esto pasa por el multiplicador vigente. */
+export const INGREDIENT_POINTS = 10;
+export const COMBO_POINTS = 100;
+
+/** Multiplicador de combo: arranca en x2 y sube de a uno hasta el tope. */
+export const MULTIPLIER_MAX = 4;
+/** Cuánto dura, en frames (600 = 10 s). Cada combo nuevo lo renueva entero. */
+export const MULTIPLIER_FRAMES = 600;
+
+/** Duración del parpadeo de error al agarrar el ingrediente equivocado. */
+export const ERROR_FLASH_FRAMES = 24;
+
+/**
+ * Cuánta ventaja tiene el ingrediente que le toca al jugador en el sorteo.
+ * Alta pero no total: la secuencia tiene que poder cortarse, si no el combo
+ * se completa solo y no hay decisión que tomar.
+ */
+export const INGREDIENT_BIAS = 0.65;
+
+/** Separación entre ingredientes, en frames de recorrido. */
+export const INGREDIENT_GAP = {
+  MIN_FRAMES: 45,
+  RANDOM_FRAMES: 60,
+  /**
+   * Reintento corto cuando no había ninguna altura alcanzable. Descartar el
+   * turno completo dejaba la pista casi sin ingredientes: dos de cada tres
+   * intentos caían en la zona de maniobra de algún obstáculo. Con el reintento
+   * corto el ingrediente entra apenas la pista se despeja.
+   */
+  RETRY_FRAMES: 10,
+} as const;
+
+/**
+ * Distancias mínimas a un obstáculo, en frames, para que un ingrediente no
+ * quede en una posición imposible.
+ *
+ * La postura del jugador cerca de un obstáculo no es libre: sobre un cajón o
+ * una moto está en el aire, y en un cartel está agachado. Un ingrediente BAJO
+ * pegado a un cajón es inalcanzable porque el jugador va a estar volando justo
+ * ahí, y uno MEDIO o ALTO pegado a un cartel lo es porque va a estar por el
+ * piso. Estas holguras se miden en frames y se convierten a píxeles con la
+ * velocidad del momento.
+ */
+export const INGREDIENT_CLEARANCE = {
+  /** Mitad del vuelo: cuánto antes despega y cuánto después aterriza. */
+  JUMP_HALF_FRAMES: 17,
+  /** Frames que sigue agachado después de pasar el cartel. */
+  SLIDE_TAIL_FRAMES: 30,
+  /** Frames antes del cartel en que ya se tiró al piso. */
+  SLIDE_LEAD_FRAMES: 6,
+  /** Margen mínimo contra cualquier obstáculo, para no superponerse nunca. */
+  MIN_PX: 12,
+} as const;
+
+/** Ingredientes vivos a la vez. Se reciclan igual que los obstáculos. */
+export const INGREDIENT_POOL_SIZE = 6;
 
 /**
  * Paleta cerrada. Reglas de uso, válidas en todo el juego:

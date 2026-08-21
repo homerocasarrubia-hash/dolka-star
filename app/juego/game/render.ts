@@ -1,12 +1,24 @@
 // Dibujado. No toca el estado: solo lee GameState y pinta.
 
-import { GAME_HEIGHT, GAME_WIDTH, GROUND_Y, HORIZON_Y, PALETTE } from './config';
 import {
+  GAME_HEIGHT,
+  GAME_WIDTH,
+  GROUND_Y,
+  HORIZON_Y,
+  INGREDIENT_ORDER,
+  MULTIPLIER_FRAMES,
+  PALETTE,
+  TUTORIAL,
+  TUTORIAL_COPY,
+} from './config';
+import {
+  ingredientHitbox,
   obstacleHitbox,
   obstacleSpriteRect,
   playerHitbox,
   playerSpriteRect,
   type GameState,
+  type Ingredient,
   type Obstacle,
   type Player,
 } from './engine';
@@ -62,6 +74,44 @@ function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: Obstacle[]): vo
     if (!o.active) continue;
     const box = obstacleHitbox(o);
     ctx.fillRect(Math.round(box.x), Math.round(box.y), box.w, box.h);
+  }
+}
+
+/**
+ * Silueta de cada ingrediente dentro de su caja de 24x24, como fracciones de la
+ * caja: [desde, alto] en 0..1. Se distinguen por FORMA porque el color está
+ * fijado por la paleta: todos los ingredientes son pickup.
+ *
+ * La hitbox sigue siendo los 24x24 completos: acá lo generoso juega a favor del
+ * jugador, al revés que en un obstáculo.
+ */
+const FORMA_INGREDIENTE: Record<string, { desde: number; alto: number; domo: boolean }> = {
+  PAN_ABAJO: { desde: 0.5, alto: 0.5, domo: false },
+  CARNE: { desde: 0.28, alto: 0.44, domo: false },
+  QUESO: { desde: 0.4, alto: 0.2, domo: false },
+  PAN_ARRIBA: { desde: 0, alto: 0.55, domo: true },
+};
+
+function drawIngredients(ctx: CanvasRenderingContext2D, ingredients: Ingredient[]): void {
+  ctx.fillStyle = PALETTE.pickup;
+  for (const ing of ingredients) {
+    if (!ing.active) continue;
+    const box = ingredientHitbox(ing);
+    const x = Math.round(box.x);
+    const y = Math.round(box.y);
+    const forma = FORMA_INGREDIENTE[ing.type];
+    const alto = Math.round(box.h * forma.alto);
+    const top = y + Math.round(box.h * forma.desde);
+
+    if (!forma.domo) {
+      ctx.fillRect(x, top, box.w, alto);
+      continue;
+    }
+    // Pan de arriba: domo escalonado, por filas, sin antialias.
+    for (let f = 0; f < alto; f += 1) {
+      const recorte = Math.round(((alto - 1 - f) / (alto - 1)) * (box.w / 3));
+      ctx.fillRect(x + recorte, top + f, box.w - recorte * 2, 1);
+    }
   }
 }
 
@@ -127,39 +177,185 @@ function drawDebugOverlay(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.restore();
 }
 
-function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
-  // TODO: sacar el HUD de debug cuando arranque el gameplay.
+/**
+ * Opacidad de un cartel del tutorial en un frame dado.
+ *
+ * Entra y sale con fundido para que no aparezca de golpe. Si el jugador ya
+ * ejecutó la acción, el tramo termina antes: el cartel ya cumplió su función y
+ * se va fundiéndose desde ese momento, sin cortarse de golpe.
+ */
+function alphaTutorial(
+  step: number,
+  desde: number,
+  hasta: number,
+  hechoEnStep: number | null,
+): number {
+  if (step < desde) return 0;
+
+  const fin = hechoEnStep === null ? hasta : Math.min(hasta, hechoEnStep + TUTORIAL.FADE_FRAMES);
+  if (step > fin) return 0;
+
+  const entrada = (step - desde) / TUTORIAL.FADE_FRAMES;
+  const salida = (fin - step) / TUTORIAL.FADE_FRAMES;
+  return Math.max(0, Math.min(1, entrada, salida));
+}
+
+/** Flecha triangular, dibujada por filas de 1px para que no tenga antialias. */
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  y: number,
+  hacia: 'arriba' | 'abajo',
+): void {
+  const filas = 6;
+  for (let i = 0; i < filas; i += 1) {
+    const ancho = 1 + i * 2;
+    const fy = hacia === 'arriba' ? y + i : y + (filas - 1 - i);
+    ctx.fillRect(Math.round(cx - ancho / 2), fy, ancho, 1);
+  }
+}
+
+/**
+ * Carteles del tutorial, durante el warmup. No bloquean nada: el mundo sigue
+ * corriendo detrás y el jugador puede ignorarlos.
+ */
+function drawTutorial(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const copy = TUTORIAL_COPY[state.inputKind];
+  const saltoAlpha = alphaTutorial(state.steps, 0, TUTORIAL.JUMP_UNTIL, state.jumpedAtStep);
+  const slideAlpha = alphaTutorial(
+    state.steps,
+    TUTORIAL.JUMP_UNTIL,
+    TUTORIAL.SLIDE_UNTIL,
+    state.slidAtStep,
+  );
+  if (saltoAlpha <= 0 && slideAlpha <= 0) return;
+
+  const cx = GAME_WIDTH / 2;
+  ctx.save();
   ctx.font = '8px monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   ctx.fillStyle = PALETTE.accent;
 
-  // Puntaje: es lo único del HUD que se queda cuando saquemos el debug.
+  if (saltoAlpha > 0) {
+    ctx.globalAlpha = saltoAlpha;
+    drawArrow(ctx, cx, 140, 'arriba');
+    ctx.fillText(copy.jump, cx, 156);
+  }
+
+  if (slideAlpha > 0) {
+    ctx.globalAlpha = slideAlpha;
+    ctx.fillText(copy.slide, cx, 140);
+    drawArrow(ctx, cx, 150, 'abajo');
+  }
+
+  ctx.restore();
+}
+
+/**
+ * La hamburguesa armándose, arriba a la derecha. Se dibuja de abajo hacia
+ * arriba, en el mismo orden en que hay que juntarla: la capa de más abajo es el
+ * primer ingrediente.
+ *
+ * Juntadas van en pickup, las que faltan quedan como contorno tenue en white.
+ * Al errar, todas parpadean en white: el error se marca por parpadeo y no por
+ * color, porque danger está reservado a los obstáculos.
+ */
+function drawBurger(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const ancho = 20;
+  const alto = 4;
+  const sep = 1;
+  const x = GAME_WIDTH - 4 - ancho;
+  const base = 16; // y de la capa de más abajo
+
+  const parpadeo = state.errorFlashFrames > 0 && Math.floor(state.errorFlashFrames / 4) % 2 === 0;
+
+  for (let i = 0; i < INGREDIENT_ORDER.length; i += 1) {
+    const y = base - i * (alto + sep);
+    const juntado = i < state.sequenceIndex;
+
+    if (parpadeo) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = PALETTE.white;
+      ctx.fillRect(x, y, ancho, alto);
+      continue;
+    }
+
+    if (juntado) {
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = PALETTE.pickup;
+      ctx.fillRect(x, y, ancho, alto);
+    } else {
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = PALETTE.white;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, ancho - 1, alto - 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Multiplicador y su barra de tiempo. Solo aparece con un combo activo. */
+function drawMultiplier(ctx: CanvasRenderingContext2D, state: GameState): void {
+  if (state.multiplierFrames <= 0) return;
+
+  const ancho = 20;
+  const x = GAME_WIDTH - 4 - ancho;
+  const y = 22;
+
+  ctx.fillStyle = PALETTE.accent;
   ctx.textAlign = 'right';
-  ctx.fillText(String(state.score), GAME_WIDTH - 4, 4);
+  ctx.textBaseline = 'top';
+  ctx.fillText(`x${state.multiplier}`, GAME_WIDTH - 4, y);
+
+  // Barra: se vacía de derecha a izquierda a medida que corre el tiempo.
+  const restante = Math.max(0, Math.min(1, state.multiplierFrames / MULTIPLIER_FRAMES));
+  ctx.globalAlpha = 0.3;
+  ctx.fillRect(x, y + 10, ancho, 2);
+  ctx.globalAlpha = 1;
+  ctx.fillRect(x, y + 10, Math.round(ancho * restante), 2);
+}
+
+function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
+  ctx.font = '8px monospace';
+  ctx.textBaseline = 'top';
+
+  // Puntaje, arriba a la izquierda.
+  ctx.fillStyle = PALETTE.accent;
   ctx.textAlign = 'left';
+  ctx.fillText(String(state.score), 4, 4);
 
-  ctx.fillText(`${state.fps} FPS`, 4, 4);
-  ctx.fillText(state.player.state, 4, 14);
+  drawBurger(ctx, state);
+  drawMultiplier(ctx, state);
 
+  // TODO: sacar el bloque de debug y el contador de FPS antes de publicar.
   if (!state.debug) return;
+  ctx.textAlign = 'left';
+  ctx.fillStyle = PALETTE.accent;
   const p = state.player;
   const spr = playerSpriteRect(p);
   const box = playerHitbox(p);
-  ctx.fillText(`vy ${p.vy.toFixed(2)}`, 4, 24);
-  ctx.fillText(`hit ${box.w}x${box.h}`, 4, 34);
-  ctx.fillText(`spr ${spr.w}x${spr.h}`, 4, 44);
-  ctx.fillText(`spd ${state.speed.toFixed(2)}`, 4, 54);
+  ctx.fillText(`${state.fps} FPS`, 4, 16);
+  ctx.fillText(p.state, 4, 26);
+  ctx.fillText(`vy ${p.vy.toFixed(2)}`, 4, 36);
+  ctx.fillText(`hit ${box.w}x${box.h}`, 4, 46);
+  ctx.fillText(`spr ${spr.w}x${spr.h}`, 4, 56);
+  ctx.fillText(`spd ${state.speed.toFixed(2)}`, 4, 66);
   let activos = 0;
   for (const o of state.obstacles) if (o.active) activos += 1;
-  ctx.fillText(`obs ${activos}/${state.obstacles.length}`, 4, 64);
-  ctx.fillText(state.phase, 4, 74);
+  let ings = 0;
+  for (const i of state.ingredients) if (i.active) ings += 1;
+  ctx.fillText(`obs ${activos} ing ${ings}`, 4, 76);
+  ctx.fillText(`seq ${state.sequenceIndex} x${state.multiplier}`, 4, 86);
+  ctx.fillText(state.phase, 4, 96);
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: GameState): void {
   drawBackground(ctx);
   drawObstacles(ctx, state.obstacles);
+  drawIngredients(ctx, state.ingredients);
   drawPlayer(ctx, state.player);
+  drawTutorial(ctx, state);
   if (state.debug) drawDebugOverlay(ctx, state);
   drawHud(ctx, state);
 }

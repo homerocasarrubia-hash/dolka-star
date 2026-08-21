@@ -1,0 +1,59 @@
+// Schema de Dolka Star.
+//
+// OJO: los modelos GameSession y Score de acá abajo están DERIVADOS del spec de
+// las rutas, no copiados del documento original: el mensaje que los pedía llegó
+// con el marcador "[pegar acá los modelos...]" sin resolver y el repo no tenía
+// schema.prisma previo. Si el documento define otros nombres o tipos, este
+// archivo es el único lugar donde hay que reconciliarlo, más los accesos en
+// app/api/game/*.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// Prisma 7 sacó la URL del schema: la de migrate vive en prisma.config.ts y la
+// de runtime entra por el adapter de Neon en lib/prisma.ts.
+datasource db {
+  provider = "postgresql"
+}
+
+/// Una partida arrancada. La crea POST /api/game/start y es la única fuente de
+/// verdad sobre cuándo empezó: el cliente nunca informa duración.
+model GameSession {
+  id        String   @id @default(cuid())
+  /// Reloj del SERVIDOR. De acá sale la duración real de la partida.
+  startedAt DateTime @default(now())
+  /// Se completa al registrar el puntaje. Null = partida abandonada.
+  finishedAt DateTime?
+  /// Solo para rate limit y auditoría. NUNCA se expone en una respuesta.
+  ip        String?
+  userAgent String?
+
+  score Score?
+
+  /// Sostiene el conteo de sesiones por IP en la última hora.
+  @@index([ip, startedAt])
+}
+
+/// Puntaje validado. Uno por sesión como máximo: el @unique sobre sessionId es
+/// lo que impide reenviar el mismo resultado dos veces.
+model Score {
+  id         String      @id @default(cuid())
+  sessionId  String      @unique
+  session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  score      Int
+  playerName String
+  /// Dato de contacto, opcional. NUNCA sale en /api/leaderboard.
+  whatsapp   String?
+  /// Lunes 00:00 de la semana en curso, en hora de Argentina, guardado en UTC.
+  /// Lo calcula el servidor; el cliente no elige la semana.
+  weekStart  DateTime
+  /// Se marca a mano cuando el ganador de la semana valida su puntaje en el
+  /// local, antes de cobrar el premio. Nunca lo setea el cliente.
+  verified   Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+
+  /// Sostiene el top 20 semanal.
+  @@index([weekStart, score(sort: Desc)])
+}

@@ -1,13 +1,24 @@
 // Loop, estado y simulación. No dibuja nada: eso es responsabilidad de render.ts.
 
 import {
+  COMBO_POINTS,
+  ERROR_FLASH_FRAMES,
   FIXED_DT,
   FPS,
   FREEZE_FRAMES,
   GAME_WIDTH,
   GROUND_Y,
+  INGREDIENT_BIAS,
+  INGREDIENT_CLEARANCE,
+  INGREDIENT_GAP,
+  INGREDIENT_LANES,
+  INGREDIENT_ORDER,
+  INGREDIENT_POINTS,
+  INGREDIENT_POOL_SIZE,
   MAX_FRAME_TIME,
   MIN_EXECUTION_WINDOW_FRAMES,
+  MULTIPLIER_FRAMES,
+  MULTIPLIER_MAX,
   OBSTACLE_POOL_SIZE,
   OBSTACLE_SPRITE,
   PHYSICS,
@@ -19,9 +30,14 @@ import {
   SLIDE_FRAMES,
   SPAWN,
   SPRITES,
+  TOUCH_INTENT_FRAMES,
+  TOUCH_INTENT_MAX_FRAMES,
   UNLOCK_SPEED,
   WARMUP_FRAMES,
   WORLD,
+  type IngredientLane,
+  type IngredientType,
+  type InputKind,
   type ObstacleType,
   type SpriteSpec,
 } from './config';
@@ -73,10 +89,40 @@ export interface Obstacle {
   active: boolean;
 }
 
+/** Ingrediente del pool. Mismo criterio que los obstáculos: nada se instancia en partida. */
+export interface Ingredient {
+  type: IngredientType;
+  lane: IngredientLane;
+  /** Esquina superior izquierda del SPRITE. */
+  x: number;
+  y: number;
+  active: boolean;
+}
+
 export interface GameState {
   player: Player;
   /** Pool completo. Recorrer siempre filtrando por `active`. */
   obstacles: Obstacle[];
+  ingredients: Ingredient[];
+  /** Posición en INGREDIENT_ORDER: qué ingrediente le toca juntar ahora. */
+  sequenceIndex: number;
+  /** Multiplicador de combo vigente. 1 = sin combo. */
+  multiplier: number;
+  /** Frames que le quedan al multiplicador. */
+  multiplierFrames: number;
+  /** Frames que le quedan al parpadeo de error. */
+  errorFlashFrames: number;
+  /** Combos completados en la partida. */
+  combos: number;
+  /** Píxeles recorridos desde el último ingrediente. */
+  sinceIngredient: number;
+  ingredientGap: number;
+  /**
+   * Puntos por distancia ya otorgados, sin multiplicar. El puntaje dejó de ser
+   * derivable de `scrolled` cuando el multiplicador pasó a afectarlo: hay que
+   * llevar la cuenta de qué tramos ya se cobraron y a qué multiplicador.
+   */
+  distancePoints: number;
   phase: Phase;
   /** Frames que faltan para pasar de FREEZE a GAME_OVER. */
   freezeTimer: number;
@@ -99,6 +145,19 @@ export interface GameState {
   fps: number;
   /** Overlay de debug, apagado por defecto. Se prende con la tecla D. */
   debug: boolean;
+  /**
+   * Gracia que le queda a la ventana de intención del toque. Se renueva cada
+   * vez que el dedo baja un poco más. En cero no hay ventana abierta.
+   */
+  touchIntentFrames: number;
+  /** Frames que lleva abierta la ventana, para aplicarle el tope duro. */
+  touchIntentAge: number;
+  /** Frame en que el jugador saltó por primera vez, o null. Para el tutorial. */
+  jumpedAtStep: number | null;
+  /** Frame en que se agachó por primera vez, o null. Para el tutorial. */
+  slidAtStep: number | null;
+  /** Con qué se está jugando, según el primer evento recibido. */
+  inputKind: InputKind;
 }
 
 /**
@@ -117,6 +176,10 @@ export function createState(): GameState {
   for (let i = 0; i < OBSTACLE_POOL_SIZE; i += 1) {
     obstacles.push({ type: 'CAJON', x: 0, y: 0, active: false });
   }
+  const ingredients: Ingredient[] = [];
+  for (let i = 0; i < INGREDIENT_POOL_SIZE; i += 1) {
+    ingredients.push({ type: 'PAN_ABAJO', lane: 'BAJA', x: 0, y: 0, active: false });
+  }
 
   return {
     player: {
@@ -128,6 +191,15 @@ export function createState(): GameState {
       slideBuffer: 0,
     },
     obstacles,
+    ingredients,
+    sequenceIndex: 0,
+    multiplier: 1,
+    multiplierFrames: 0,
+    errorFlashFrames: 0,
+    combos: 0,
+    sinceIngredient: 0,
+    ingredientGap: WORLD.SPEED_START * INGREDIENT_GAP.MIN_FRAMES,
+    distancePoints: 0,
     phase: 'PLAYING',
     freezeTimer: 0,
     speed: WORLD.SPEED_START,
@@ -140,6 +212,11 @@ export function createState(): GameState {
     steps: 0,
     fps: 0,
     debug: false,
+    touchIntentFrames: 0,
+    touchIntentAge: 0,
+    jumpedAtStep: null,
+    slidAtStep: null,
+    inputKind: 'touch',
   };
 }
 
@@ -157,6 +234,16 @@ export function resetState(state: GameState): void {
   p.slideBuffer = 0;
 
   for (const o of state.obstacles) o.active = false;
+  for (const i of state.ingredients) i.active = false;
+
+  state.sequenceIndex = 0;
+  state.multiplier = 1;
+  state.multiplierFrames = 0;
+  state.errorFlashFrames = 0;
+  state.combos = 0;
+  state.sinceIngredient = 0;
+  state.ingredientGap = WORLD.SPEED_START * INGREDIENT_GAP.MIN_FRAMES;
+  state.distancePoints = 0;
 
   state.phase = 'PLAYING';
   state.freezeTimer = 0;
@@ -168,6 +255,11 @@ export function resetState(state: GameState): void {
   state.score = 0;
   state.elapsed = 0;
   state.steps = 0;
+  state.touchIntentFrames = 0;
+  state.touchIntentAge = 0;
+  state.jumpedAtStep = null;
+  state.slidAtStep = null;
+  // `fps`, `debug` e `inputKind` son del entorno, no de la partida.
 }
 
 // ---------------------------------------------------------------------------
@@ -260,16 +352,82 @@ export function releaseJump(state: GameState): void {
   if (p.vy < 0) p.vy *= PHYSICS.JUMP_CUT_MULTIPLIER;
 }
 
+/** Cierra la ventana sin decidir nada. */
+function cerrarIntencion(state: GameState): void {
+  state.touchIntentFrames = 0;
+  state.touchIntentAge = 0;
+}
+
+/**
+ * Dedo apoyado. No salta: abre la ventana de intención. Mientras esté abierta,
+ * un swipe descarta el salto sin que haya llegado a existir.
+ */
+export function touchStart(state: GameState): void {
+  if (state.phase !== 'PLAYING') return;
+  state.touchIntentFrames = TOUCH_INTENT_FRAMES;
+  state.touchIntentAge = 0;
+}
+
+/**
+ * El dedo bajó un poco más. Renueva la gracia: mientras siga bajando, el salto
+ * no arranca aunque todavía no haya llegado al umbral de swipe. Esto es lo que
+ * hace adaptativa a la ventana.
+ */
+export function touchDescend(state: GameState): void {
+  if (state.touchIntentFrames <= 0) return; // ya resuelta, no se reabre
+  state.touchIntentFrames = TOUCH_INTENT_FRAMES;
+}
+
+/**
+ * El dedo cambió de dirección sin llegar al umbral: era un toque, y se resuelve
+ * en el acto en vez de esperar a que se agote la gracia.
+ */
+export function touchSettle(state: GameState): void {
+  if (state.touchIntentFrames <= 0) return;
+  cerrarIntencion(state);
+  pressJump(state);
+}
+
+/**
+ * Dedo levantado. Si el salto todavía no arrancó, fue un toque corto: arranca y
+ * se corta en el acto. El sostenido se mide desde que el salto arranca de
+ * verdad, así que mantener el dedo sigue dando la misma altura que antes.
+ */
+export function touchRelease(state: GameState): void {
+  if (state.touchIntentFrames > 0) {
+    cerrarIntencion(state);
+    pressJump(state);
+    releaseJump(state);
+    return;
+  }
+  releaseJump(state);
+}
+
+/** Toque interrumpido por el navegador: ni salto ni nada. */
+export function touchCancel(state: GameState): void {
+  cerrarIntencion(state);
+  releaseJump(state);
+}
+
+/** Con qué se está jugando. Lo decide el primer evento, no el user agent. */
+export function setInputKind(state: GameState, kind: InputKind): void {
+  state.inputKind = kind;
+}
+
 /**
  * Pedido de slide.
  * - En el piso corriendo: arranca el slide.
  * - En el aire: cae rápido y el slide queda encolado para el aterrizaje, pero
- *   solo por SLIDE_BUFFER_FRAMES. Esto es lo que hace usable el swipe en touch,
- *   donde el touchstart ya disparó un salto antes de que el gesto se pueda
- *   reconocer, sin que un pedido viejo reviva medio salto después.
+ *   solo por SLIDE_BUFFER_FRAMES. Desde que el salto táctil se difiere, este
+ *   caso es únicamente el swipe genuino en el aire: un segundo gesto durante un
+ *   salto ya en curso. La caducidad evita que un pedido viejo reviva medio
+ *   salto después.
  */
 export function pressSlide(state: GameState): void {
   if (state.phase !== 'PLAYING') return;
+  // El swipe gana sobre la intención de salto: el toque se descarta entero.
+  cerrarIntencion(state);
+
   const p = state.player;
   if (p.state === 'HIT' || p.state === 'SLIDING') return;
 
@@ -470,7 +628,14 @@ function spawnObstacle(state: GameState): void {
 function updateWorld(state: GameState): void {
   state.speed = speedAt(state.steps);
   state.scrolled += state.speed;
-  state.score = Math.floor(state.scrolled / PX_PER_POINT);
+
+  // Los puntos por distancia se cobran a medida que se cruzan los umbrales, con
+  // el multiplicador vigente en ese momento. No se puede derivar de `scrolled`.
+  const ganados = Math.floor(state.scrolled / PX_PER_POINT) - state.distancePoints;
+  if (ganados > 0) {
+    state.distancePoints += ganados;
+    sumarPuntos(state, ganados);
+  }
 
   for (const o of state.obstacles) {
     if (!o.active) continue;
@@ -494,6 +659,179 @@ function checkCollisions(state: GameState): void {
       hitPlayer(state);
       return;
     }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ingredientes: secuencia, combos y spawner
+// ---------------------------------------------------------------------------
+
+export function ingredientHitbox(i: Ingredient): Rect {
+  return hitboxRect(SPRITES.ingredient, i.x, i.y);
+}
+
+/** Qué ingrediente le toca juntar al jugador ahora. */
+export function nextIngredient(state: GameState): IngredientType {
+  return INGREDIENT_ORDER[state.sequenceIndex];
+}
+
+/** Suma puntos aplicando el multiplicador vigente. */
+function sumarPuntos(state: GameState, base: number): void {
+  state.score += base * state.multiplier;
+}
+
+/**
+ * Se juntó un ingrediente. El correcto avanza la secuencia; cualquier otro la
+ * reinicia, sin restar puntos, y deja el parpadeo de error.
+ */
+function collectIngredient(state: GameState, i: Ingredient): void {
+  i.active = false;
+
+  if (i.type !== nextIngredient(state)) {
+    state.sequenceIndex = 0;
+    state.errorFlashFrames = ERROR_FLASH_FRAMES;
+    return;
+  }
+
+  sumarPuntos(state, INGREDIENT_POINTS);
+  state.sequenceIndex += 1;
+  if (state.sequenceIndex < INGREDIENT_ORDER.length) return;
+
+  // Hamburguesa completa. El bono se cobra con el multiplicador con el que se
+  // llegó; la subida rige de acá en adelante.
+  sumarPuntos(state, COMBO_POINTS);
+  state.sequenceIndex = 0;
+  state.combos += 1;
+  state.multiplier = Math.min(MULTIPLIER_MAX, Math.max(2, state.multiplier + 1));
+  state.multiplierFrames = MULTIPLIER_FRAMES;
+}
+
+/**
+ * ¿Es alcanzable un ingrediente en esta posición, dados los obstáculos cerca?
+ *
+ * Cerca de un obstáculo la postura del jugador no es libre, así que hay alturas
+ * que no puede tocar por más que quiera. Ver INGREDIENT_CLEARANCE en config.ts.
+ */
+function posicionAlcanzable(
+  state: GameState,
+  lane: IngredientLane,
+  x: number,
+  speed: number,
+): boolean {
+  const ancho = SPRITES.ingredient.sprite.w;
+  const izq = x;
+  const der = x + ancho;
+
+  // El próximo obstáculo todavía no existe, pero ya se sabe a qué distancia va
+  // a entrar. Hay que contarlo igual: entra pocos frames después y quedaría
+  // pegado al ingrediente sin que ningún chequeo lo hubiera visto. Se lo trata
+  // como bloqueo para cualquier altura, porque su tipo se sortea recién al
+  // spawnearlo y todavía no se sabe qué maniobra va a exigir.
+  const faltaParaObstaculo = state.nextGap - state.sinceSpawn;
+  if (faltaParaObstaculo > 0) {
+    const holgura =
+      speed *
+      Math.max(INGREDIENT_CLEARANCE.JUMP_HALF_FRAMES, INGREDIENT_CLEARANCE.SLIDE_TAIL_FRAMES);
+    if (GAME_WIDTH + faltaParaObstaculo - der < holgura) return false;
+  }
+
+  for (const o of state.obstacles) {
+    if (!o.active) continue;
+
+    const caja = obstacleHitbox(o);
+    const oIzq = caja.x;
+    const oDer = caja.x + caja.w;
+
+    // Nunca encima de un obstáculo, sea cual sea la altura.
+    const margen = INGREDIENT_CLEARANCE.MIN_PX;
+    if (der + margen > oIzq && izq - margen < oDer) return false;
+
+    if (o.type === 'CARTEL') {
+      // Se pasa agachado: arriba no hay nadie que lo agarre.
+      if (lane === 'BAJA') continue;
+      const desde = oIzq - speed * INGREDIENT_CLEARANCE.SLIDE_LEAD_FRAMES;
+      const hasta = oDer + speed * INGREDIENT_CLEARANCE.SLIDE_TAIL_FRAMES;
+      if (der > desde && izq < hasta) return false;
+    } else {
+      // Cajón o moto: se pasan por el aire, así que abajo no hay nadie.
+      if (lane !== 'BAJA') continue;
+      const vuelo = speed * INGREDIENT_CLEARANCE.JUMP_HALF_FRAMES;
+      if (der > oIzq - vuelo && izq < oDer + vuelo) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Sorteo con ventaja para el que le toca al jugador, pero sin garantizarlo:
+ * la secuencia tiene que poder cortarse.
+ */
+function pickIngredientType(state: GameState): IngredientType {
+  const necesario = nextIngredient(state);
+  if (Math.random() < INGREDIENT_BIAS) return necesario;
+
+  const otros = INGREDIENT_ORDER.filter((t) => t !== necesario);
+  return otros[Math.floor(Math.random() * otros.length)];
+}
+
+function spawnIngredient(state: GameState): void {
+  const libre = state.ingredients.find((i) => !i.active);
+  if (!libre) return;
+
+  const type = pickIngredientType(state);
+  const x = GAME_WIDTH;
+
+  // Se prueban las tres alturas en orden aleatorio y se toma la primera que sea
+  // alcanzable. Si ninguna lo es, no se spawnea: mejor sin ingrediente que con
+  // uno que el jugador no puede tocar.
+  const lanes: IngredientLane[] = ['BAJA', 'MEDIA', 'ALTA'];
+  for (let i = lanes.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lanes[i], lanes[j]] = [lanes[j], lanes[i]];
+  }
+  const lane = lanes.find((l) => posicionAlcanzable(state, l, x, state.speed));
+
+  state.sinceIngredient = 0;
+  if (!lane) {
+    // Ninguna altura era alcanzable acá. Se vuelve a intentar enseguida, no en
+    // el próximo hueco completo: mejor sin ingrediente que con uno imposible,
+    // pero tampoco hace falta perder el turno entero.
+    state.ingredientGap = state.speed * INGREDIENT_GAP.RETRY_FRAMES;
+    return;
+  }
+
+  state.ingredientGap =
+    state.speed * (INGREDIENT_GAP.MIN_FRAMES + Math.random() * INGREDIENT_GAP.RANDOM_FRAMES);
+
+  libre.type = type;
+  libre.lane = lane;
+  libre.x = x;
+  libre.y = INGREDIENT_LANES[lane];
+  libre.active = true;
+}
+
+function updateIngredients(state: GameState): void {
+  if (state.errorFlashFrames > 0) state.errorFlashFrames -= 1;
+
+  if (state.multiplierFrames > 0) {
+    state.multiplierFrames -= 1;
+    if (state.multiplierFrames === 0) state.multiplier = 1;
+  }
+
+  const caja = playerHitbox(state.player);
+  for (const i of state.ingredients) {
+    if (!i.active) continue;
+    i.x -= state.speed;
+    if (i.x + SPRITES.ingredient.sprite.w < 0) {
+      i.active = false;
+      continue;
+    }
+    if (overlaps(caja, ingredientHitbox(i))) collectIngredient(state, i);
+  }
+
+  state.sinceIngredient += state.speed;
+  if (state.steps >= WARMUP_FRAMES && state.sinceIngredient >= state.ingredientGap) {
+    spawnIngredient(state);
   }
 }
 
@@ -549,8 +887,31 @@ export function update(state: GameState, dt: number): void {
 
   if (state.phase === 'GAME_OVER') return;
 
+  // La ventana de intención se resuelve antes de la física, para que el salto
+  // que se comprometió en este frame ya se mueva en este frame.
+  if (state.touchIntentFrames > 0) {
+    state.touchIntentFrames -= 1;
+    state.touchIntentAge += 1;
+    // Se agotó la gracia (el dedo dejó de bajar) o se llegó al tope duro.
+    if (state.touchIntentFrames <= 0 || state.touchIntentAge >= TOUCH_INTENT_MAX_FRAMES) {
+      cerrarIntencion(state);
+      pressJump(state);
+    }
+  }
+
   updatePlayer(state.player);
+
+  // Marcadores del tutorial. Van acá y no en las acciones porque así cubren
+  // todos los caminos de una: teclado, mouse, touch y el slide encolado.
+  if (state.jumpedAtStep === null && state.player.state === 'JUMPING') {
+    state.jumpedAtStep = state.steps;
+  }
+  if (state.slidAtStep === null && state.player.state === 'SLIDING') {
+    state.slidAtStep = state.steps;
+  }
+
   updateWorld(state);
+  updateIngredients(state);
   checkCollisions(state);
 }
 
@@ -582,6 +943,13 @@ export interface Game {
   releaseJump(): void;
   pressSlide(): void;
   toggleDebug(): void;
+  /** Touch: el salto se difiere, ver touchStart(). */
+  touchStart(): void;
+  touchDescend(): void;
+  touchSettle(): void;
+  touchRelease(): void;
+  touchCancel(): void;
+  setInputKind(kind: InputKind): void;
 }
 
 export function createGame(ctx: CanvasRenderingContext2D, options: GameOptions = {}): Game {
@@ -659,5 +1027,11 @@ export function createGame(ctx: CanvasRenderingContext2D, options: GameOptions =
     releaseJump: () => releaseJump(state),
     pressSlide: () => pressSlide(state),
     toggleDebug: () => toggleDebug(state),
+    touchStart: () => touchStart(state),
+    touchDescend: () => touchDescend(state),
+    touchSettle: () => touchSettle(state),
+    touchRelease: () => touchRelease(state),
+    touchCancel: () => touchCancel(state),
+    setInputKind: (kind: InputKind) => setInputKind(state, kind),
   };
 }

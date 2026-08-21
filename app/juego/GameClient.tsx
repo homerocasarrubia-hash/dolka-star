@@ -40,8 +40,14 @@ export default function GameClient() {
     const detachInput = attachInput(surface, {
       onJumpPress: game.pressJump,
       onJumpRelease: game.releaseJump,
+      onTouchStart: game.touchStart,
+      onTouchDescend: game.touchDescend,
+      onTouchSettle: game.touchSettle,
+      onTouchRelease: game.touchRelease,
+      onTouchCancel: game.touchCancel,
       onSlide: game.pressSlide,
       onToggleDebug: game.toggleDebug,
+      onInputKind: game.setInputKind,
     });
     game.start();
 
