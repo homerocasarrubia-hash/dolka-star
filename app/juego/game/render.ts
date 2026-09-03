@@ -12,7 +12,7 @@ import {
   TUTORIAL,
   TUTORIAL_COPY,
 } from './config';
-import { spritesListos } from './sprites';
+import { spritesListos, type Frame } from './sprites';
 import {
   ingredientHitbox,
   obstacleHitbox,
@@ -128,16 +128,33 @@ function cuadroDeCorrida(scrolled: number, cantidad: number): number {
   return Math.floor(scrolled / PX_POR_CUADRO_DE_CORRIDA) % cantidad;
 }
 
+/** El cuadro que le toca al estado actual, o null si los sprites no cargaron. */
+function cuadroDelJugador(state: GameState): Frame | null {
+  const sprites = spritesListos();
+  if (!sprites) return null;
+
+  switch (state.player.state) {
+    case 'RUNNING':
+      return sprites.correr[cuadroDeCorrida(state.scrolled, sprites.correr.length)];
+    case 'JUMPING':
+      return sprites.saltar;
+    case 'SLIDING':
+      return sprites.deslizar;
+    case 'HIT':
+      return sprites.golpe;
+  }
+}
+
 function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState): void {
   const p = state.player;
-  const sprites = spritesListos();
+  const cuadro = cuadroDelJugador(state);
 
-  // Corriendo y con los sprites listos: se dibuja el perro.
-  if (p.state === 'RUNNING' && sprites && sprites.correr.length > 0) {
-    const cuadro = sprites.correr[cuadroDeCorrida(state.scrolled, sprites.correr.length)];
+  if (cuadro) {
     const spr = playerSpriteRect(p);
     const x = Math.round(spr.x);
-    const y = Math.round(spr.y);
+    // ajusteY baja el cuadro hasta que el dibujo quede apoyado en los pies: cada
+    // pose deja distinta cantidad de aire abajo de su cuadro de 48x48.
+    const y = Math.round(spr.y) + cuadro.ajusteY;
 
     // El contorno primero, corrido un píxel: es la silueta engordada en accent.
     // Al tapar con la imagen encima queda solo el borde de 1px.
@@ -146,8 +163,8 @@ function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState): void {
     return;
   }
 
-  // El resto de los estados sigue con el placeholder hasta que lleguen sus
-  // sprites. La forma es la hitbox: 30x42 de pie, 30x21 pegado al piso.
+  // Respaldo por si los sprites no cargaron: el juego se sigue pudiendo jugar.
+  // La forma es la hitbox: 30x42 de pie, 30x21 pegado al piso.
   const box = playerHitbox(p);
   const x = Math.round(box.x);
   const y = Math.round(box.y);
