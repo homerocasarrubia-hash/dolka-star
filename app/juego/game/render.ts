@@ -69,12 +69,24 @@ function drawBackground(ctx: CanvasRenderingContext2D): void {
 }
 
 function drawObstacles(ctx: CanvasRenderingContext2D, obstacles: Obstacle[]): void {
-  // Placeholder del tamaño de la HITBOX, igual que el jugador: lo que se ve es
-  // exactamente lo que mata. danger es exclusivo de los obstáculos.
-  ctx.fillStyle = PALETTE.danger;
+  const sprites = spritesListos();
+
   for (const o of obstacles) {
     if (!o.active) continue;
+
+    // Los obstáculos NO llevan contorno: el de accent es la marca del jugador.
+    const dibujo = sprites?.obstaculos[o.type];
+    if (dibujo) {
+      const r = obstacleSpriteRect(o);
+      ctx.drawImage(dibujo.imagen, Math.round(r.x) + dibujo.ajusteX, Math.round(r.y) + dibujo.ajusteY);
+      continue;
+    }
+
+    // Respaldo si los sprites no cargaron: rectángulo del tamaño de la HITBOX,
+    // o sea lo que se ve es exactamente lo que mata. danger es exclusivo de los
+    // obstáculos.
     const box = obstacleHitbox(o);
+    ctx.fillStyle = PALETTE.danger;
     ctx.fillRect(Math.round(box.x), Math.round(box.y), box.w, box.h);
   }
 }
@@ -209,15 +221,21 @@ function drawDebugOverlay(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.fillStyle = PALETTE.white;
   ctx.fillText(`${box.w}x${box.h}`, Math.round(box.x), Math.max(10, Math.round(spr.y) - 2));
 
-  // Huella del sprite real de cada obstáculo, alrededor de su hitbox.
+  // Cuadro y hitbox de cada obstáculo. La hitbox va marcada aparte porque desde
+  // que los obstáculos se dibujan con sprite dejó de verse sola: antes el
+  // rectángulo pintado ERA la hitbox.
   ctx.save();
-  ctx.globalAlpha = 0.35;
   ctx.strokeStyle = PALETTE.white;
   ctx.lineWidth = 1;
   for (const o of state.obstacles) {
     if (!o.active) continue;
     const r = obstacleSpriteRect(o);
+    ctx.globalAlpha = 0.35;
     ctx.strokeRect(Math.round(r.x) + 0.5, Math.round(r.y) + 0.5, r.w - 1, r.h - 1);
+
+    const h = obstacleHitbox(o);
+    ctx.globalAlpha = 0.7;
+    ctx.strokeRect(Math.round(h.x) + 0.5, Math.round(h.y) + 0.5, h.w - 1, h.h - 1);
   }
   ctx.restore();
 }

@@ -4,7 +4,7 @@
 // puede quedarse esperando una imagen, ni recalcular contornos o buscar el
 // borde inferior del dibujo por frame.
 
-import { SPRITES, PALETTE } from './config';
+import { OBSTACLE_SPRITE, SPRITES, PALETTE, type ObstacleType } from './config';
 
 /**
  * Los archivos, agrupados por estado. La corrida es el único grupo con más de
@@ -21,20 +21,34 @@ const RUTAS = {
   golpe: ['/juego/sprites/dolka-hit.png'],
 } as const;
 
-/** Un cuadro listo para dibujar: imagen, contorno y corrección de apoyo. */
-export interface Frame {
+const RUTAS_OBSTACULOS: Record<ObstacleType, string> = {
+  CAJON: '/juego/sprites/obs-cajon.png',
+  MOTO: '/juego/sprites/obs-moto.png',
+  CARTEL: '/juego/sprites/obs-cartel.png',
+};
+
+/** Un dibujo listo para pegar en el canvas, ya corregido de apoyo. */
+export interface Dibujo {
   imagen: CanvasImageSource;
+  /**
+   * Cuánto hay que correr el dibujo dentro de su cuadro para que quede apoyado
+   * donde corresponde. Ver `apoyoDelGrupo` y `filaDeApoyo`.
+   */
+  ajusteY: number;
+  /** Centra el archivo en el cuadro si no miden lo mismo de ancho. */
+  ajusteX: number;
+}
+
+/** Un cuadro del jugador: además del dibujo, lleva contorno. */
+export interface Frame extends Dibujo {
   /**
    * Silueta del sprite expandida 1px, pintada en accent. Se dibuja debajo de la
    * imagen, corrida (-1,-1), y el resultado es un contorno que sigue la forma
    * del personaje en vez de encerrarlo en una caja.
+   *
+   * Es exclusivo del jugador: los obstáculos no llevan contorno.
    */
   contorno: CanvasImageSource;
-  /**
-   * Cuánto hay que bajar el cuadro de 48x48 para que el dibujo quede apoyado en
-   * los pies. Ver `apoyoDelGrupo`.
-   */
-  ajusteY: number;
 }
 
 export interface Sprites {
@@ -42,6 +56,7 @@ export interface Sprites {
   saltar: Frame;
   deslizar: Frame;
   golpe: Frame;
+  obstaculos: Record<ObstacleType, Dibujo>;
 }
 
 let cargados: Sprites | null = null;
@@ -218,7 +233,49 @@ function armarGrupo(imagenes: HTMLImageElement[]): Frame[] {
     imagen: lienzo,
     contorno: armarContorno(lienzo, sprite.w, sprite.h),
     ajusteY,
+    ajusteX: 0,
   }));
+}
+
+/**
+ * Fila del cuadro donde tiene que terminar el dibujo de cada obstáculo.
+ *
+ * Son dos criterios distintos porque los obstáculos se ubican distinto:
+ *
+ * - Los apoyados (cajón y moto): `spawnY` deja el borde de abajo del CUADRO
+ *   sobre la línea del piso, así que el dibujo tiene que terminar en la última
+ *   fila del cuadro. La hitbox queda 2px más arriba, que es la indulgencia que
+ *   ya estaba y no se toca.
+ * - El cartel: cuelga, y lo que importa es el borde de abajo de su HITBOX, que
+ *   es la altura que obliga al slide. El dibujo termina ahí, no en el cuadro.
+ *
+ * Nada de esto mueve una hitbox: solo decide dónde se pega el dibujo.
+ */
+function filaDeApoyo(type: ObstacleType): number {
+  const spec = SPRITES[OBSTACLE_SPRITE[type]];
+  if (type === 'CARTEL') return spec.hitboxOffset.y + spec.hitbox.h - 1;
+  return spec.sprite.h - 1;
+}
+
+/**
+ * Prepara el dibujo de un obstáculo.
+ *
+ * Los archivos no miden lo mismo que el cuadro declarado en config (la moto
+ * viene de 60x48 contra un cuadro de 60x36) y ninguno tiene el dibujo pegado al
+ * borde de abajo. Por eso se los ubica por dónde TERMINA el dibujo, medido del
+ * canal alfa, y no por el tamaño del archivo.
+ */
+function armarObstaculo(type: ObstacleType, img: HTMLImageElement): Dibujo {
+  const ancho = img.naturalWidth;
+  const alto = img.naturalHeight;
+  const { lienzo, ultimaFila } = prepararImagen(img, ancho, alto);
+  const { sprite } = SPRITES[OBSTACLE_SPRITE[type]];
+
+  return {
+    imagen: lienzo,
+    ajusteY: filaDeApoyo(type) - ultimaFila,
+    ajusteX: Math.round((sprite.w - ancho) / 2),
+  };
 }
 
 /**
@@ -231,14 +288,26 @@ export function cargarSprites(): Promise<Sprites | null> {
   if (enCurso) return enCurso;
 
   const grupos = [RUTAS.correr, RUTAS.saltar, RUTAS.deslizar, RUTAS.golpe];
+  const tipos = Object.keys(RUTAS_OBSTACULOS) as ObstacleType[];
 
-  enCurso = Promise.all(grupos.map((rutas) => Promise.all(rutas.map(cargarImagen))))
-    .then(([correr, saltar, deslizar, golpe]) => {
+  // Todo junto: el preloader no larga la pantalla de inicio hasta que estén
+  // también los obstáculos, así no arranca una partida a medio dibujar.
+  enCurso = Promise.all([
+    Promise.all(grupos.map((rutas) => Promise.all(rutas.map(cargarImagen)))),
+    Promise.all(tipos.map((t) => cargarImagen(RUTAS_OBSTACULOS[t]))),
+  ])
+    .then(([[correr, saltar, deslizar, golpe], imagenesObstaculos]) => {
+      const obstaculos = {} as Record<ObstacleType, Dibujo>;
+      tipos.forEach((t, i) => {
+        obstaculos[t] = armarObstaculo(t, imagenesObstaculos[i]);
+      });
+
       cargados = {
         correr: armarGrupo(correr),
         saltar: armarGrupo(saltar)[0],
         deslizar: armarGrupo(deslizar)[0],
         golpe: armarGrupo(golpe)[0],
+        obstaculos,
       };
       return cargados;
     })
