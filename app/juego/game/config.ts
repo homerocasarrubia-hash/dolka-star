@@ -196,6 +196,20 @@ export const TUTORIAL_COPY = {
   desktop: { jump: 'ESPACIO PARA SALTAR', slide: 'FLECHA ABAJO PARA AGACHARTE' },
 } as const satisfies Record<InputKind, { jump: string; slide: string }>;
 
+/**
+ * Animación de corrida: 8 frames por segundo a la velocidad inicial.
+ *
+ * La animación NO se mide en tiempo sino en píxeles recorridos, y por eso
+ * acompaña sola a la velocidad del scroll: cuando el mundo acelera, el perro
+ * mueve las patas más rápido en la misma proporción. Si se midiera en tiempo,
+ * a velocidad máxima parecería patinar sobre el piso.
+ *
+ * A SPEED_START, 8 fps son 60/8 = 7.5 frames de lógica por cuadro, o sea
+ * 3.5 * 7.5 = 26.25 px de recorrido por cuadro.
+ */
+export const RUN_ANIM_FPS = 8;
+export const PX_POR_CUADRO_DE_CORRIDA = (WORLD.SPEED_START * FPS) / RUN_ANIM_FPS;
+
 /** Píxeles de scroll por punto de puntaje. */
 export const PX_PER_POINT = 13;
 

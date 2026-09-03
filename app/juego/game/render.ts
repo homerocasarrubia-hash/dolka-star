@@ -7,10 +7,12 @@ import {
   HORIZON_Y,
   INGREDIENT_ORDER,
   MULTIPLIER_FRAMES,
+  PX_POR_CUADRO_DE_CORRIDA,
   PALETTE,
   TUTORIAL,
   TUTORIAL_COPY,
 } from './config';
+import { spritesListos } from './sprites';
 import {
   ingredientHitbox,
   obstacleHitbox,
@@ -115,10 +117,37 @@ function drawIngredients(ctx: CanvasRenderingContext2D, ingredients: Ingredient[
   }
 }
 
-function drawPlayer(ctx: CanvasRenderingContext2D, p: Player): void {
-  // El placeholder se dibuja con la forma de la hitbox: 30x42 de pie,
-  // 30x21 pegado al piso deslizándose. Los estados se distinguen por FORMA y
-  // grosor de contorno, nunca por color: danger es exclusivo de los obstáculos.
+/**
+ * Cuadro de la animación de corrida.
+ *
+ * Sale de los píxeles recorridos y no del reloj: así la animación va atada a la
+ * velocidad del scroll (ver PX_POR_CUADRO_DE_CORRIDA en config.ts). Como
+ * `scrolled` se congela al chocar, la animación se congela con él.
+ */
+function cuadroDeCorrida(scrolled: number, cantidad: number): number {
+  return Math.floor(scrolled / PX_POR_CUADRO_DE_CORRIDA) % cantidad;
+}
+
+function drawPlayer(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const p = state.player;
+  const sprites = spritesListos();
+
+  // Corriendo y con los sprites listos: se dibuja el perro.
+  if (p.state === 'RUNNING' && sprites && sprites.correr.length > 0) {
+    const cuadro = sprites.correr[cuadroDeCorrida(state.scrolled, sprites.correr.length)];
+    const spr = playerSpriteRect(p);
+    const x = Math.round(spr.x);
+    const y = Math.round(spr.y);
+
+    // El contorno primero, corrido un píxel: es la silueta engordada en accent.
+    // Al tapar con la imagen encima queda solo el borde de 1px.
+    ctx.drawImage(cuadro.contorno, x - 1, y - 1);
+    ctx.drawImage(cuadro.imagen, x, y);
+    return;
+  }
+
+  // El resto de los estados sigue con el placeholder hasta que lleguen sus
+  // sprites. La forma es la hitbox: 30x42 de pie, 30x21 pegado al piso.
   const box = playerHitbox(p);
   const x = Math.round(box.x);
   const y = Math.round(box.y);
@@ -126,8 +155,8 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player): void {
   ctx.fillStyle = p.state === 'HIT' ? PALETTE.white : PALETTE.clothes;
   ctx.fillRect(x, y, box.w, box.h);
 
-  // Contorno permanente en accent, para despegarlo del fondo oscuro. Se mantiene
-  // cuando el placeholder pase a ser el sprite real. Más grueso en el aire.
+  // Contorno permanente en accent, para despegarlo del fondo oscuro. Más grueso
+  // en el aire: los estados se distinguen por FORMA, nunca por color.
   const grosor = p.state === 'JUMPING' ? 2 : 1;
   ctx.strokeStyle = PALETTE.accent;
   ctx.lineWidth = grosor;
@@ -136,8 +165,8 @@ function drawPlayer(ctx: CanvasRenderingContext2D, p: Player): void {
 
 /**
  * Overlay de debug (tecla D). Muestra la relación entre el sprite y la hitbox,
- * que es justo lo que no se puede ver mirando el placeholder. Se va junto con
- * el contador de FPS cuando entren los sprites reales.
+ * que es justo lo que no se puede ver mirando al jugador. Se va junto con el
+ * contador de FPS cuando el juego salga a producción.
  */
 function drawDebugOverlay(ctx: CanvasRenderingContext2D, state: GameState): void {
   const p = state.player;
@@ -148,7 +177,7 @@ function drawDebugOverlay(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.strokeStyle = PALETTE.white;
   ctx.lineWidth = 1;
 
-  // Espacio que va a ocupar el perro real: 48x48 alrededor de la hitbox.
+  // Espacio que ocupa el sprite de 48x48 alrededor de la hitbox.
   ctx.globalAlpha = 0.35;
   ctx.strokeRect(Math.round(spr.x) + 0.5, Math.round(spr.y) + 0.5, spr.w - 1, spr.h - 1);
 
@@ -157,7 +186,6 @@ function drawDebugOverlay(ctx: CanvasRenderingContext2D, state: GameState): void
   ctx.strokeRect(Math.round(box.x) + 0.5, Math.round(box.y) + 0.5, box.w - 1, box.h - 1);
   ctx.restore();
 
-  // Medidas de la hitbox, arriba del rect del sprite (sin salirse del canvas).
   ctx.font = '8px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'bottom';
@@ -354,7 +382,7 @@ export function render(ctx: CanvasRenderingContext2D, state: GameState): void {
   drawBackground(ctx);
   drawObstacles(ctx, state.obstacles);
   drawIngredients(ctx, state.ingredients);
-  drawPlayer(ctx, state.player);
+  drawPlayer(ctx, state);
   drawTutorial(ctx, state);
   if (state.debug) drawDebugOverlay(ctx, state);
   drawHud(ctx, state);

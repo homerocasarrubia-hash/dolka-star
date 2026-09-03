@@ -7,6 +7,13 @@
 // archivo es el único lugar donde hay que reconciliarlo, más los accesos en
 // app/api/game/*.
 
+// Todas las columnas de fecha van en TIMESTAMPTZ, no en el timestamp sin zona
+// que Prisma usa por defecto. Con el tipo sin zona, el valor guardado es un
+// reloj de pared sin contexto: la app lo interpretaba bien, pero mirándolo con
+// SQL directo o en Prisma Studio aparecía corrido y no había forma de saber a
+// qué instante correspondía. Con timestamptz el valor es un instante absoluto y
+// cada herramienta lo muestra en su zona.
+
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
@@ -23,9 +30,9 @@ datasource db {
 model GameSession {
   id        String   @id @default(cuid())
   /// Reloj del SERVIDOR. De acá sale la duración real de la partida.
-  startedAt DateTime @default(now())
+  startedAt DateTime @default(now()) @db.Timestamptz(3)
   /// Se completa al registrar el puntaje. Null = partida abandonada.
-  finishedAt DateTime?
+  finishedAt DateTime? @db.Timestamptz(3)
   /// Solo para rate limit y auditoría. NUNCA se expone en una respuesta.
   ip        String?
   userAgent String?
@@ -59,13 +66,13 @@ model Score {
   playerName String
   /// Dato de contacto, opcional. NUNCA sale en /api/leaderboard.
   whatsapp   String?
-  /// Lunes 00:00 de la semana en curso, en hora de Argentina, guardado en UTC.
+  /// Lunes 00:00 de la semana en curso, en hora de Argentina.
   /// Lo calcula el servidor; el cliente no elige la semana.
-  weekStart  DateTime
+  weekStart  DateTime    @db.Timestamptz(3)
   /// Se marca a mano cuando el ganador de la semana valida su puntaje en el
   /// local, antes de cobrar el premio. Nunca lo setea el cliente.
   verified   Boolean     @default(false)
-  createdAt  DateTime    @default(now())
+  createdAt  DateTime    @default(now()) @db.Timestamptz(3)
 
   /// Un jugador, una fila por semana. Es la garantía dura contra dos filas del
   /// mismo jugador, incluso si llegan dos envíos exactamente a la vez.

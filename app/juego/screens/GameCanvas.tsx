@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from 'react';
 import { GAME_HEIGHT, GAME_WIDTH } from '../game/config';
 import { createGame } from '../game/engine';
 import { attachInput } from '../game/input';
-import { MARCO_STYLE } from '../ui';
 
 export default function GameCanvas({
   onGameOver,
@@ -65,11 +64,7 @@ export default function GameCanvas({
   if (fatal) throw fatal;
 
   return (
-    <div
-      ref={surfaceRef}
-      style={{ ...MARCO_STYLE, touchAction: 'none' }}
-      className="relative"
-    >
+    <div ref={surfaceRef} style={{ touchAction: 'none' }} className="relative h-full w-full">
       <canvas
         ref={canvasRef}
         width={GAME_WIDTH}

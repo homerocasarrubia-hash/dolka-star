@@ -4,8 +4,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { PALETTE } from './game/config';
+import './juego.css';
+import { BarraSuperior, ColumnaArte, VARIABLES_DE_TEMA } from './layout-piezas';
 import { mejorPuntaje, obtenerPerfil, obtenerPlayerId, type Perfil } from './game/prefs';
+import { cargarSprites } from './game/sprites';
+import Cargando from './screens/Cargando';
 import ComoSeJuega from './screens/ComoSeJuega';
 import GameCanvas from './screens/GameCanvas';
 import GameOver from './screens/GameOver';
@@ -37,13 +40,28 @@ export default function GameClient() {
   const [errorInicio, setErrorInicio] = useState<string | null>(null);
   const [mejor, setMejor] = useState(0);
 
+  const [avisoSprites, setAvisoSprites] = useState<string | null>(null);
+
   useEffect(() => {
+    let vivo = true;
     setPlayerId(obtenerPlayerId()); // se genera acá la primera vez
     const guardado = obtenerPerfil();
     setPerfil(guardado);
     setMejor(mejorPuntaje());
-    // Sin nombre todavía: se pide una única vez, antes de la primera partida.
-    setPantalla(guardado ? 'INICIO' : 'PERFIL');
+
+    // No se muestra nada jugable hasta que los sprites estén en memoria.
+    void cargarSprites().then((sprites) => {
+      if (!vivo) return;
+      if (!sprites) {
+        setAvisoSprites('No se pudieron cargar los dibujos. Se juega igual, con las figuras simples.');
+      }
+      // Sin nombre todavía: se pide una única vez, antes de la primera partida.
+      setPantalla(guardado ? 'INICIO' : 'PERFIL');
+    });
+
+    return () => {
+      vivo = false;
+    };
   }, []);
 
   // El récord puede haber cambiado durante la partida.
@@ -103,51 +121,61 @@ export default function GameClient() {
   }, []);
 
   return (
-    // Ocupa el viewport completo por encima del Header/Footer del layout.
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden"
-      style={{ backgroundColor: PALETTE.frame }}
-    >
-      {pantalla === 'PERFIL' && (
-        <PerfilScreen
-          inicial={perfil}
-          onListo={guardarPerfilYSeguir}
-          onCancelar={perfil ? () => setPantalla('INICIO') : undefined}
-        />
-      )}
+    <div className="juego-pagina" style={VARIABLES_DE_TEMA}>
+      {/* Permanente: no depende de la pantalla, así no salta el layout. */}
+      <BarraSuperior nombre={perfil?.nombre ?? null} />
 
-      {pantalla === 'INICIO' && (
-        <Inicio
-          onJugar={jugar}
-          onComoSeJuega={() => setPantalla('COMO_SE_JUEGA')}
-          onRanking={() => setPantalla('RANKING')}
-          onCambiarNombre={() => setPantalla('PERFIL')}
-          cargando={iniciando}
-          error={errorInicio}
-          mejor={mejor}
-          nombre={perfil?.nombre ?? null}
-        />
-      )}
+      <div className="juego-cuerpo">
+        {/* Vacías por ahora: cuando llegue el arte, se les pasa `src`. */}
+        <ColumnaArte />
 
-      {pantalla === 'COMO_SE_JUEGA' && <ComoSeJuega onVolver={() => setPantalla('INICIO')} />}
+        <main className="juego-marco">
+          {pantalla === 'CARGANDO' && <Cargando />}
 
-      {pantalla === 'JUGANDO' && <GameCanvas onGameOver={terminar} />}
+          {pantalla === 'PERFIL' && (
+            <PerfilScreen
+              inicial={perfil}
+              onListo={guardarPerfilYSeguir}
+              onCancelar={perfil ? () => setPantalla('INICIO') : undefined}
+            />
+          )}
 
-      {pantalla === 'GAME_OVER' && perfil && (
-        <GameOver
-          score={score}
-          sessionId={sessionId}
-          perfil={perfil}
-          onJugarDeNuevo={jugar}
-          onRanking={() => setPantalla('RANKING')}
-        />
-      )}
+          {pantalla === 'INICIO' && (
+            <Inicio
+              onJugar={jugar}
+              onComoSeJuega={() => setPantalla('COMO_SE_JUEGA')}
+              onRanking={() => setPantalla('RANKING')}
+              onCambiarNombre={() => setPantalla('PERFIL')}
+              cargando={iniciando}
+              error={errorInicio ?? avisoSprites}
+              mejor={mejor}
+              nombre={perfil?.nombre ?? null}
+            />
+          )}
 
-      {pantalla === 'RANKING' && (
-        <Ranking onVolver={() => setPantalla('INICIO')} onReglas={() => setPantalla('REGLAS')} />
-      )}
+          {pantalla === 'COMO_SE_JUEGA' && <ComoSeJuega onVolver={() => setPantalla('INICIO')} />}
 
-      {pantalla === 'REGLAS' && <Reglas onVolver={() => setPantalla('RANKING')} />}
+          {pantalla === 'JUGANDO' && <GameCanvas onGameOver={terminar} />}
+
+          {pantalla === 'GAME_OVER' && perfil && (
+            <GameOver
+              score={score}
+              sessionId={sessionId}
+              perfil={perfil}
+              onJugarDeNuevo={jugar}
+              onRanking={() => setPantalla('RANKING')}
+            />
+          )}
+
+          {pantalla === 'RANKING' && (
+            <Ranking onVolver={() => setPantalla('INICIO')} onReglas={() => setPantalla('REGLAS')} />
+          )}
+
+          {pantalla === 'REGLAS' && <Reglas onVolver={() => setPantalla('RANKING')} />}
+        </main>
+
+        <ColumnaArte />
+      </div>
     </div>
   );
 }

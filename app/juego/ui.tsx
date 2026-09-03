@@ -4,25 +4,20 @@
 // son duros, sin border-radius, para que el chrome acompañe al pixel art.
 'use client';
 
-import type { CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
-import { GAME_HEIGHT, GAME_WIDTH, PALETTE } from './game/config';
+import type { InputHTMLAttributes, ReactNode } from 'react';
+import { PALETTE } from './game/config';
 import { pixelFont } from './font';
 
 /**
- * Caja con la misma forma y tamaño que el canvas. Todas las pantallas viven
- * adentro de ella, así el juego y el menú ocupan exactamente el mismo rectángulo
- * y no hay saltos visuales al pasar de una cosa a la otra.
+ * Contenido de una pantalla. Ya NO se dimensiona a sí misma: el tamaño y la
+ * relación de aspecto los pone el marco de la ruta (ver juego.css), así el
+ * rectángulo es idéntico en todas las pantallas y no hay salto al cambiar.
  */
-export const MARCO_STYLE: CSSProperties = {
-  width: `min(100vw, calc(100dvh * ${GAME_WIDTH} / ${GAME_HEIGHT}))`,
-  aspectRatio: `${GAME_WIDTH} / ${GAME_HEIGHT}`,
-};
-
 export function Pantalla({ children }: { children: ReactNode }) {
   return (
     <div
-      style={{ ...MARCO_STYLE, backgroundColor: PALETTE.sky, color: PALETTE.white }}
-      className="flex flex-col items-center overflow-y-auto px-5 py-6 font-mono text-[11px]"
+      style={{ color: PALETTE.white }}
+      className="flex h-full w-full flex-col items-center overflow-y-auto px-5 py-5 font-mono text-[11px]"
     >
       {children}
     </div>
