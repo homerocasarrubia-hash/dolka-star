@@ -5,6 +5,8 @@
 // borde inferior del dibujo por frame.
 
 import {
+  FONDO,
+  GROUND_Y,
   OBSTACLE_SPRITE,
   SPRITES,
   PALETTE,
@@ -78,7 +80,28 @@ export interface DibujoIngrediente extends Dibujo {
   ultimaFila: number;
 }
 
+/** Una capa del fondo, ya ubicada en su altura definitiva. */
+export interface CapaFondo {
+  imagen: CanvasImageSource;
+  ancho: number;
+  /** Fila del canvas donde se dibuja el borde de arriba del archivo. */
+  y: number;
+}
+
+export interface Fondo {
+  cielo: CapaFondo;
+  /** Relleno de arriba del cielo: el archivo no llega hasta el borde. */
+  colorArriba: string;
+  medias: CapaFondo[];
+  calle: CapaFondo;
+  /** Fila donde termina el archivo de la calle. */
+  finCalle: number;
+  /** Relleno de abajo de la calle, hasta el borde inferior del canvas. */
+  colorAbajo: string;
+}
+
 export interface Sprites {
+  fondo: Fondo;
   correr: Frame[];
   saltar: Frame;
   deslizar: Frame;
@@ -125,7 +148,18 @@ interface Preparada {
  * nada, porque el dibujo puede apoyarse en el borde del cuadro (el del slide lo
  * hace) y una limpieza a ciegas se le comería píxeles.
  */
-function prepararImagen(img: HTMLImageElement, ancho: number, alto: number): Preparada {
+function prepararImagen(
+  img: HTMLImageElement,
+  ancho: number,
+  alto: number,
+  /**
+   * Red para un export sin alfa. Va apagada en las capas de fondo, donde ser
+   * opaco de punta a punta es lo NORMAL y no un error: el cartel de Dolka Star
+   * tiene medio borde blanco (la cenefa a cuadros) y una limpieza a ciegas se lo
+   * comería entero.
+   */
+  limpiarBlanco = true,
+): Preparada {
   const lienzo = document.createElement('canvas');
   lienzo.width = ancho;
   lienzo.height = alto;
@@ -141,7 +175,7 @@ function prepararImagen(img: HTMLImageElement, ancho: number, alto: number): Pre
   let transparentes = 0;
   for (let i = 3; i < px.length; i += 4) if (px[i] === 0) transparentes += 1;
 
-  if (transparentes === 0) {
+  if (transparentes === 0 && limpiarBlanco) {
     console.warn('[juego] sprite sin canal alfa: se limpia el fondo blanco a mano');
     quitarFondoBlanco(px, ancho, alto);
     ctx.putImageData(datos, 0, 0);
@@ -358,6 +392,78 @@ function armarIngrediente(img: HTMLImageElement): DibujoIngrediente {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fondo
+// ---------------------------------------------------------------------------
+
+/** Color de una fila del archivo, tomado de la columna 0. */
+function colorDeFila(lienzo: HTMLCanvasElement, fila: number): string {
+  const ctx = lienzo.getContext('2d');
+  if (!ctx) return PALETTE.sky;
+  const [r, g, b] = ctx.getImageData(0, fila, 1, 1).data;
+  return `rgb(${r},${g},${b})`;
+}
+
+/** Prepara una capa de fondo con el archivo tal cual viene, sin limpiezas. */
+function prepararCapa(img: HTMLImageElement): { lienzo: HTMLCanvasElement } & Preparada {
+  return prepararImagen(img, img.naturalWidth, img.naturalHeight, false);
+}
+
+/**
+ * Capa que se apoya en el piso: cielo y capas medias.
+ *
+ * Se alinea por dónde TERMINA el dibujo, igual que los sprites: el último
+ * píxel dibujado cae en la última fila de aire, justo arriba de la calle. Con
+ * esto, una variante media más alta o más baja que las otras se acomoda sola.
+ */
+function capaApoyada(img: HTMLImageElement): CapaFondo & { primeraFila: number; lienzo: HTMLCanvasElement } {
+  const { lienzo, primeraFila, ultimaFila } = prepararCapa(img);
+  return {
+    imagen: lienzo,
+    ancho: lienzo.width,
+    y: GROUND_Y - 1 - ultimaFila,
+    primeraFila,
+    lienzo,
+  };
+}
+
+/**
+ * La calle. Se alinea al revés: la PRIMERA fila dibujada es la superficie por
+ * la que corre el jugador, así que va exactamente en GROUND_Y. Si se corriera
+ * un píxel, los obstáculos se verían flotando o hundidos.
+ */
+function capaCalle(img: HTMLImageElement): CapaFondo & { fin: number; color: string } {
+  const { lienzo, primeraFila, ultimaFila } = prepararCapa(img);
+  const y = GROUND_Y - primeraFila;
+  return {
+    imagen: lienzo,
+    ancho: lienzo.width,
+    y,
+    fin: y + ultimaFila + 1,
+    color: colorDeFila(lienzo, ultimaFila),
+  };
+}
+
+function armarFondo(
+  cieloImg: HTMLImageElement,
+  mediasImg: HTMLImageElement[],
+  calleImg: HTMLImageElement,
+): Fondo {
+  const cielo = capaApoyada(cieloImg);
+  const calle = capaCalle(calleImg);
+
+  return {
+    cielo,
+    // El archivo del cielo no llega al borde de arriba del canvas: lo que falta
+    // se rellena con su propia fila de más arriba, que es plana.
+    colorArriba: colorDeFila(cielo.lienzo, cielo.primeraFila),
+    medias: mediasImg.map(capaApoyada),
+    calle,
+    finCalle: calle.fin,
+    colorAbajo: calle.color,
+  };
+}
+
 /**
  * Carga los sprites una sola vez. Si alguno falla devuelve null y el juego
  * sigue con los rectángulos: quedarse sin poder jugar por una imagen que no
@@ -372,14 +478,24 @@ export function cargarSprites(): Promise<Sprites | null> {
   const ingredientes = Object.keys(RUTAS_INGREDIENTES) as IngredientType[];
 
   // Todo junto: el preloader no larga la pantalla de inicio hasta que estén
-  // también los obstáculos y los ingredientes, así no arranca una partida a
-  // medio dibujar.
+  // también el fondo, los obstáculos y los ingredientes, así no arranca una
+  // partida a medio dibujar.
   enCurso = Promise.all([
     Promise.all(grupos.map((rutas) => Promise.all(rutas.map(cargarImagen)))),
     Promise.all(tipos.map((t) => cargarImagen(RUTAS_OBSTACULOS[t]))),
     Promise.all(ingredientes.map((t) => cargarImagen(RUTAS_INGREDIENTES[t]))),
+    Promise.all([
+      cargarImagen(FONDO.CIELO),
+      Promise.all(FONDO.MEDIAS.map(cargarImagen)),
+      cargarImagen(FONDO.CALLE),
+    ]),
   ])
-    .then(([[correr, saltar, deslizar, golpe], imagenesObstaculos, imagenesIngredientes]) => {
+    .then(([
+      [correr, saltar, deslizar, golpe],
+      imagenesObstaculos,
+      imagenesIngredientes,
+      [cieloImg, mediasImg, calleImg],
+    ]) => {
       const obstaculos = {} as Record<ObstacleType, Dibujo>;
       tipos.forEach((t, i) => {
         obstaculos[t] = armarObstaculo(t, imagenesObstaculos[i]);
@@ -391,6 +507,7 @@ export function cargarSprites(): Promise<Sprites | null> {
       });
 
       cargados = {
+        fondo: armarFondo(cieloImg, mediasImg, calleImg),
         correr: armarGrupo(correr),
         saltar: armarGrupo(saltar)[0],
         deslizar: armarGrupo(deslizar)[0],

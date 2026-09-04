@@ -210,6 +210,32 @@ export const TUTORIAL_COPY = {
 export const RUN_ANIM_FPS = 8;
 export const PX_POR_CUADRO_DE_CORRIDA = (WORLD.SPEED_START * FPS) / RUN_ANIM_FPS;
 
+/**
+ * Fondo en parallax: tres capas que se repiten, cada una a su velocidad.
+ *
+ * La velocidad es una fracción del scroll del mundo: 1 es "va pegado al piso" y
+ * 0 sería "no se mueve nunca". Cuanto más lejos está la capa, más chico el
+ * número, que es lo que da la sensación de profundidad.
+ *
+ * MEDIAS es una LISTA a propósito: las variantes se van alternando en el orden
+ * en que están acá y el ciclo completo mide la suma de sus anchos. Para sumar
+ * una variante nueva alcanza con agregar una línea; no hay nada más que tocar,
+ * ni siquiera si mide distinto de ancho que las otras.
+ */
+export const FONDO = {
+  CIELO: '/juego/sprites/bg-cielo.png',
+  MEDIAS: [
+    '/juego/sprites/bg-cerro.png',
+    '/juego/sprites/bg-dolka.png',
+  ],
+  CALLE: '/juego/sprites/bg-calle.png',
+  VELOCIDAD: {
+    CIELO: 0.05,
+    MEDIA: 0.3,
+    CALLE: 1,
+  },
+} as const;
+
 /** Píxeles de scroll por punto de puntaje. */
 export const PX_PER_POINT = 13;
 

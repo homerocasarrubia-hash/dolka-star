@@ -7,13 +7,14 @@ import {
   HORIZON_Y,
   INGREDIENT_ORDER,
   MULTIPLIER_FRAMES,
+  FONDO,
   PX_POR_CUADRO_DE_CORRIDA,
   PALETTE,
   SPRITES,
   TUTORIAL,
   TUTORIAL_COPY,
 } from './config';
-import { spritesListos, type Frame } from './sprites';
+import { spritesListos, type CapaFondo, type Fondo, type Frame } from './sprites';
 import {
   ingredientHitbox,
   obstacleHitbox,
@@ -34,6 +35,51 @@ const HILLS: ReadonlyArray<{ x: number; w: number; h: number }> = [
   { x: 190, w: 96, h: 44 },
 ];
 
+/**
+ * Dibuja una capa repitiéndola hasta tapar el ancho de la pantalla.
+ *
+ * `capas` es una LISTA porque la capa media alterna variantes: el ciclo mide la
+ * suma de los anchos y las variantes salen en el orden en que están en config.
+ * Con una sola imagen en la lista, esto es el mosaico de siempre.
+ */
+function dibujarCapa(
+  ctx: CanvasRenderingContext2D,
+  capas: readonly CapaFondo[],
+  desplazamiento: number,
+): void {
+  if (capas.length === 0) return;
+
+  const ciclo = capas.reduce((total, capa) => total + capa.ancho, 0);
+  // Módulo que también funciona con desplazamiento negativo.
+  let x = -(((desplazamiento % ciclo) + ciclo) % ciclo);
+
+  for (let i = 0; x < GAME_WIDTH; i += 1) {
+    const capa = capas[i % capas.length];
+    if (x + capa.ancho > 0) ctx.drawImage(capa.imagen, Math.round(x), capa.y);
+    x += capa.ancho;
+  }
+}
+
+/**
+ * Fondo en parallax. Cada capa se corre una fracción del scroll del mundo: el
+ * cielo casi no se mueve, los cerros van a un tercio y la calle va pegada al
+ * piso, a la misma velocidad que los obstáculos.
+ */
+function dibujarFondo(ctx: CanvasRenderingContext2D, state: GameState, fondo: Fondo): void {
+  // Arriba del archivo del cielo, su propio color plano.
+  ctx.fillStyle = fondo.colorArriba;
+  ctx.fillRect(0, 0, GAME_WIDTH, fondo.cielo.y);
+  dibujarCapa(ctx, [fondo.cielo], state.scrolled * FONDO.VELOCIDAD.CIELO);
+
+  dibujarCapa(ctx, fondo.medias, state.scrolled * FONDO.VELOCIDAD.MEDIA);
+
+  dibujarCapa(ctx, [fondo.calle], state.scrolled * FONDO.VELOCIDAD.CALLE);
+  // Abajo del archivo de la calle, el color de su última fila hasta el borde.
+  ctx.fillStyle = fondo.colorAbajo;
+  ctx.fillRect(0, fondo.finCalle, GAME_WIDTH, GAME_HEIGHT - fondo.finCalle);
+}
+
+/** Fondo de respaldo, dibujado por código, si las capas no cargaron. */
 function drawBackground(ctx: CanvasRenderingContext2D): void {
   // Cielo
   ctx.fillStyle = PALETTE.sky;
@@ -464,7 +510,10 @@ function drawHud(ctx: CanvasRenderingContext2D, state: GameState): void {
 }
 
 export function render(ctx: CanvasRenderingContext2D, state: GameState): void {
-  drawBackground(ctx);
+  const sprites = spritesListos();
+  if (sprites) dibujarFondo(ctx, state, sprites.fondo);
+  else drawBackground(ctx);
+
   drawObstacles(ctx, state.obstacles);
   drawIngredients(ctx, state.ingredients);
   drawPlayer(ctx, state);
