@@ -26,9 +26,8 @@ export const MAX_SESSION_SECONDS = 15 * 60;
 /** Cota dura del puntaje, independiente de la duración. */
 export const MAX_SCORE = 1_000_000;
 
-/** Rate limit de creación de sesiones. */
-export const MAX_SESSIONS_PER_IP = 20;
-export const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+// El rate limit por IP se sacó a propósito: en el local todos los clientes
+// comparten el WiFi, o sea una sola IP, y el límite los bloqueaba a todos.
 
 /** Nombre que se muestra en la tabla. */
 export const PLAYER_NAME_MIN = 3;

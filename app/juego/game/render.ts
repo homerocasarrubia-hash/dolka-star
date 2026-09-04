@@ -415,11 +415,15 @@ function drawBurger(ctx: CanvasRenderingContext2D, state: GameState): void {
     // Las capas se apilan por su dibujo, no por su cuadro: cada ingrediente deja
     // distinta cantidad de aire dentro de sus 24x24 y apilando por el cuadro
     // quedarían separadas por huecos que no existen en el dibujo.
-    const x = GAME_WIDTH - 4 - HUD_LADO;
+    // Eje vertical de la pila. Cada capa se corre para que el CENTRO DE SU
+    // DIBUJO caiga acá: los cuadros miden todos lo mismo, pero los dibujos no,
+    // así que alinear por el cuadro dejaba la pila torcida.
+    const eje = GAME_WIDTH - 4 - HUD_LADO / 2;
     let base = BURGER_BASE_Y; // fila donde tiene que terminar la capa en curso
 
     for (let i = 0; i < INGREDIENT_ORDER.length; i += 1) {
       const capa = sprites.ingredientes[INGREDIENT_ORDER[i]].hud;
+      const x = Math.round(eje - capa.centroX);
       const y = base - capa.ultimaFila;
 
       if (parpadeo) {

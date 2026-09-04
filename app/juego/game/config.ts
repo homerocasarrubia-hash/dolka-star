@@ -242,6 +242,10 @@ export const FONDO = {
   MEDIAS: [
     '/juego/sprites/bg-cerro.png',
     '/juego/sprites/bg-dolka.png',
+    '/juego/sprites/bg-iglesia.png',
+    '/juego/sprites/bg-entradaand.png',
+    '/juego/sprites/bg-dolkabelen.png',
+    '/juego/sprites/bg-fuente.png',
   ],
   CALLE: '/juego/sprites/bg-calle.png',
   VELOCIDAD: {
@@ -261,7 +265,7 @@ export const FONDO = {
    *
    * En 0 los dibujos se tocan; subilo si querés más respiro entre paneles.
    */
-  MARGEN_PANEL: 16,
+  MARGEN_PANEL: 1,
 } as const;
 
 /** Píxeles de scroll por punto de puntaje. */

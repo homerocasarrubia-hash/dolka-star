@@ -10,7 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PALETTE } from '../game/config';
 import { guardarMejorSemanal, registrarPuntaje, type Perfil } from '../game/prefs';
 import { pixelFont } from '../font';
-import { Boton, MensajeError, Pantalla, Titulo } from '../ui';
+import { Boton, FONDO_PORTADA, MensajeError, Pantalla, Titulo } from '../ui';
 
 type Estado = 'guardando' | 'listo' | 'error';
 
@@ -89,29 +89,33 @@ export default function GameOver({
   const esRecord = estado === 'listo' && mejoro;
 
   return (
-    <Pantalla>
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
+    <Pantalla fondo={FONDO_PORTADA} oscurecer={0.82}>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-1 text-center">
+        {/* El récord se anuncia con texto en accent y el fin de partida con el
+            cartel rojo: dos noticias distintas, dos lecturas distintas. */}
         {esRecord ? (
-          <>
-            <Titulo className="text-[13px]" >¡NUEVO RÉCORD!</Titulo>
-            <p className={`${pixelFont.className} mt-2 text-[32px]`} style={{ color: PALETTE.pickup }}>
-              {score}
-            </p>
-          </>
+          <Titulo className="text-[13px]">¡NUEVO RÉCORD!</Titulo>
         ) : (
-          <>
-            <Titulo className="text-[13px]">GAME OVER</Titulo>
-            <p className="mt-2 uppercase tracking-widest opacity-60">Puntaje</p>
-            <p className={`${pixelFont.className} text-[30px]`} style={{ color: PALETTE.accent }}>
-              {score}
-            </p>
-            {estado === 'listo' && (
-              <p className="mt-3 text-[10px] uppercase tracking-widest opacity-60">
-                Tu mejor de la semana:{' '}
-                <span style={{ color: PALETTE.pickup }}>{mejorSemana}</span>
-              </p>
-            )}
-          </>
+          <img
+            src="/juego/sprites/game-over.png"
+            alt="Game over"
+            className="w-[78%] max-w-[260px] object-contain"
+          />
+        )}
+
+        <p className="mt-4 uppercase tracking-widest opacity-60">Puntaje</p>
+        <p
+          className={`${pixelFont.className} text-[34px] leading-none`}
+          style={{ color: esRecord ? PALETTE.pickup : PALETTE.accent }}
+        >
+          {score}
+        </p>
+
+        {estado === 'listo' && !esRecord && (
+          <p className="mt-4 text-[10px] uppercase tracking-widest opacity-60">
+            Tu mejor de la semana:{' '}
+            <span style={{ color: PALETTE.pickup }}>{mejorSemana}</span>
+          </p>
         )}
 
         <div className="mt-3 h-4 text-[10px] opacity-60">
@@ -119,7 +123,7 @@ export default function GameOver({
         </div>
       </div>
 
-      <div className="flex w-full flex-col gap-3">
+      <div className="flex w-full shrink-0 flex-col gap-3">
         {error && <MensajeError>{error}</MensajeError>}
         {estado === 'error' && (
           <Boton variante="primario" onClick={() => void guardar()}>

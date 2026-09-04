@@ -3,7 +3,6 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { MAX_SESSIONS_PER_IP, RATE_LIMIT_WINDOW_MS } from '@/lib/game/server-config';
 import { validarPlayerId } from '@/lib/game/validation';
 
 export const dynamic = 'force-dynamic';
@@ -31,19 +30,12 @@ export async function POST(request: Request) {
   const ip = ipDe(request);
   const userAgent = request.headers.get('user-agent')?.slice(0, 500) ?? null;
 
-  // Rate limit por IP. Se cuenta contra la propia tabla en vez de un store
-  // aparte: el dato ya está y el índice (ip, startedAt) lo hace barato.
-  if (ip) {
-    const desde = new Date(Date.now() - RATE_LIMIT_WINDOW_MS);
-    const recientes = await prisma.gameSession.count({ where: { ip, startedAt: { gte: desde } } });
-
-    if (recientes >= MAX_SESSIONS_PER_IP) {
-      return NextResponse.json(
-        { error: 'Demasiadas partidas en poco tiempo. Probá de nuevo en un rato.' },
-        { status: 429, headers: { 'Retry-After': String(RATE_LIMIT_WINDOW_MS / 1000) } },
-      );
-    }
-  }
+  // SIN rate limit por IP. El juego se usa desde el WiFi del local, así que
+  // todos los clientes salen por una sola IP y un límite por IP los bloquea a
+  // todos juntos: castigaba justo el caso de uso real. La IP se sigue
+  // guardando para auditoría, y lo que valida un puntaje sigue estando entero
+  // en /api/game/finish (duración contra el reloj del servidor, puntos por
+  // segundo, sesión sin reusar).
 
   const session = await prisma.gameSession.create({
     data: { ip, userAgent, playerId: vPlayer.playerId },

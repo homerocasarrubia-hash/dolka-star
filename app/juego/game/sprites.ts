@@ -91,6 +91,14 @@ export interface CapaHud {
   /** Primera y última fila con dibujo, para apilar las capas sin huecos. */
   primeraFila: number;
   ultimaFila: number;
+  /**
+   * Centro horizontal del DIBUJO dentro del cuadro, en píxeles.
+   *
+   * No es el centro del cuadro: cada ingrediente ocupa distinto ancho y ninguno
+   * está perfectamente centrado en sus 24x24. Apilando por el cuadro, la pila
+   * salía torcida; apilando por esto, todas las capas comparten eje.
+   */
+  centroX: number;
 }
 
 /** Una capa del fondo, ya ubicada en su altura definitiva. */
@@ -412,6 +420,7 @@ function armarCapaHud(img: HTMLImageElement): CapaHud {
   // Se reduce desde el ARCHIVO, no desde el lienzo ya armado: una sola
   // interpolación en vez de dos encadenadas.
   const { lienzo, primeraFila, ultimaFila } = prepararImagen(img, HUD_LADO, HUD_LADO, false);
+  const { margenIzq, margenDer } = margenes(lienzo);
 
   return {
     imagen: lienzo,
@@ -419,6 +428,7 @@ function armarCapaHud(img: HTMLImageElement): CapaHud {
     anillo: armarAnillo(lienzo, HUD_LADO, HUD_LADO, PALETTE.white),
     primeraFila,
     ultimaFila,
+    centroX: (margenIzq + (HUD_LADO - margenDer)) / 2,
   };
 }
 

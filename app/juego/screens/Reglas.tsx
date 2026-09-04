@@ -6,7 +6,7 @@
 'use client';
 
 import { PALETTE } from '../game/config';
-import { Boton, Pantalla, Titulo } from '../ui';
+import { Boton, FONDO_PORTADA, Pantalla, Titulo } from '../ui';
 
 const REGLAS = [
   'La semana va de lunes 00:00 a domingo 23:59, hora de Argentina.',
@@ -18,7 +18,7 @@ const REGLAS = [
 
 export default function Reglas({ onVolver }: { onVolver: () => void }) {
   return (
-    <Pantalla>
+    <Pantalla fondo={FONDO_PORTADA} oscurecer={0.88}>
       <Titulo className="mb-4 text-[12px]">REGLAS</Titulo>
 
       <ul className="flex w-full flex-1 flex-col gap-3">

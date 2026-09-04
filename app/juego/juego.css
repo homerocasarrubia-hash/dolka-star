@@ -72,7 +72,8 @@
   grid-template-columns: 1fr;
   align-items: center;
   justify-items: center;
-  padding: 1rem;
+  /* En celular el juego va al ras: nada de margen alrededor. */
+  padding: 0;
 }
 
 /*
@@ -81,34 +82,33 @@
  * estirado a lo largo de toda la pantalla.
  */
 .juego-marco {
-  --jz-alto: calc(100dvh - var(--jz-barra) - 2rem);
+  --jz-alto: calc(100dvh - var(--jz-barra));
   /*
    * El ancho sale del alto disponible para no romper nunca la relación 240:360,
    * y se acota por el ancho del viewport para pantallas muy angostas. Al
    * derivarlo así, el alto resultante jamás supera el presupuesto: no hace falta
    * un max-height que pelearía contra el aspect-ratio.
-   */
-  /*
-   * content-box a propósito: con border-box el aspect-ratio se aplica al borde
-   * incluido y el área interna queda en 240:356, un 1% deformada. Midiendo
-   * sobre el contenido, el canvas queda exactamente en 240:360 y el borde de
-   * 2px se suma por afuera (por eso los 4px que se descuentan del alto).
+   *
+   * content-box a propósito: en escritorio hay borde de 2px, y con border-box el
+   * aspect-ratio se aplicaría al borde incluido, dejando el área interna en
+   * 240:356. Midiendo sobre el contenido, el canvas queda exactamente en 240:360
+   * y el borde se suma por afuera.
    */
   box-sizing: content-box;
-  width: min(calc(100vw - 2rem - 4px), calc((var(--jz-alto) - 4px) * 240 / 360));
+  width: min(100vw, calc(var(--jz-alto) * 240 / 360));
   aspect-ratio: 240 / 360;
 
   position: relative;
   overflow: hidden;
   background-color: var(--jz-sky);
 
-  /* Marco de arcade: borde duro y resplandor hacia afuera y hacia adentro. */
-  border: 2px solid var(--jz-accent);
+  /*
+   * En celular NO hay marco: ni borde, ni resplandor, ni margen. La pantalla es
+   * chica y cada píxel que se lleva el chrome se lo saca al juego. El marco de
+   * arcade vuelve en escritorio, que es donde sobra espacio y queda bien.
+   */
+  border: 0;
   border-radius: 0;
-  box-shadow:
-    0 0 24px -2px var(--jz-glow),
-    0 0 64px -12px var(--jz-glow),
-    inset 0 0 24px -12px var(--jz-glow);
 }
 
 /* --- Columnas de arte ---------------------------------------------------- */
@@ -126,6 +126,14 @@
 
   .juego-marco {
     --jz-alto: min(600px, calc(100dvh - var(--jz-barra) - 3rem));
+    width: min(calc(100vw - 2rem - 4px), calc((var(--jz-alto) - 4px) * 240 / 360));
+
+    /* Marco de arcade: borde duro y resplandor hacia afuera y hacia adentro. */
+    border: 2px solid var(--jz-accent);
+    box-shadow:
+      0 0 24px -2px var(--jz-glow),
+      0 0 64px -12px var(--jz-glow),
+      inset 0 0 24px -12px var(--jz-glow);
   }
 
   .juego-columna {

@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { guardarPerfil, type Perfil as DatosPerfil } from '../game/prefs';
-import { Boton, Campo, Enlace, Pantalla, Titulo } from '../ui';
+import { Boton, Campo, Enlace, FONDO_PORTADA, Pantalla, Titulo } from '../ui';
 
 export default function Perfil({
   inicial,
@@ -31,7 +31,7 @@ export default function Perfil({
   }
 
   return (
-    <Pantalla>
+    <Pantalla fondo={FONDO_PORTADA} oscurecer={0.88}>
       <Titulo className="mb-1 text-[12px]">
         {inicial ? 'CAMBIAR NOMBRE' : '¿CÓMO TE LLAMÁS?'}
       </Titulo>
