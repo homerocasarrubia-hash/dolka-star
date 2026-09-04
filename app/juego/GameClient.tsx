@@ -17,6 +17,9 @@ import PerfilScreen from './screens/Perfil';
 import Ranking from './screens/Ranking';
 import Reglas from './screens/Reglas';
 
+/** Dibujo de las columnas laterales, solo decorativo. */
+const ARTE_COLUMNA = '/juego/sprites/dolka-completo.png';
+
 type Pantalla =
   | 'CARGANDO'
   | 'PERFIL'
@@ -126,8 +129,7 @@ export default function GameClient() {
       <BarraSuperior nombre={perfil?.nombre ?? null} />
 
       <div className="juego-cuerpo">
-        {/* Vacías por ahora: cuando llegue el arte, se les pasa `src`. */}
-        <ColumnaArte />
+        <ColumnaArte src={ARTE_COLUMNA} espejada />
 
         <main className="juego-marco">
           {pantalla === 'CARGANDO' && <Cargando />}
@@ -174,7 +176,7 @@ export default function GameClient() {
           {pantalla === 'REGLAS' && <Reglas onVolver={() => setPantalla('RANKING')} />}
         </main>
 
-        <ColumnaArte />
+        <ColumnaArte src={ARTE_COLUMNA} />
       </div>
     </div>
   );

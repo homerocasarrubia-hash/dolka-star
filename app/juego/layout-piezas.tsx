@@ -67,21 +67,31 @@ export function BarraSuperior({ nombre }: { nombre: string | null }) {
 }
 
 /**
- * Columna de arte. Hoy es un contenedor vacío del tamaño correcto; cuando
- * llegue el dibujo alcanza con pasarle `src`.
+ * Columna de arte, solo en escritorio. Es decoración: va a opacidad baja para
+ * acompañar al marco sin pelearle la atención al juego, que es lo único que se
+ * mira mientras se juega.
  */
 export function ColumnaArte({
   src,
-  alt = '',
+  espejada = false,
   children,
 }: {
   src?: string;
-  alt?: string;
+  /** Da vuelta el dibujo, para que las dos columnas miren al centro. */
+  espejada?: boolean;
   children?: ReactNode;
 }) {
   return (
-    <div className="juego-columna" aria-hidden={src ? undefined : true}>
-      {src ? <img src={src} alt={alt} /> : children}
+    <div className="juego-columna" aria-hidden>
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          style={{ opacity: 0.1, transform: espejada ? 'scaleX(-1)' : undefined }}
+        />
+      ) : (
+        children
+      )}
     </div>
   );
 }

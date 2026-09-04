@@ -83,20 +83,20 @@
 .juego-marco {
   --jz-alto: calc(100dvh - var(--jz-barra) - 2rem);
   /*
-   * El ancho sale del alto disponible para no romper nunca la relación 240:426,
+   * El ancho sale del alto disponible para no romper nunca la relación 240:360,
    * y se acota por el ancho del viewport para pantallas muy angostas. Al
    * derivarlo así, el alto resultante jamás supera el presupuesto: no hace falta
    * un max-height que pelearía contra el aspect-ratio.
    */
   /*
    * content-box a propósito: con border-box el aspect-ratio se aplica al borde
-   * incluido y el área interna queda en 240:422, un 0.5% deformada. Midiendo
-   * sobre el contenido, el canvas queda exactamente en 240:426 y el borde de
+   * incluido y el área interna queda en 240:356, un 1% deformada. Midiendo
+   * sobre el contenido, el canvas queda exactamente en 240:360 y el borde de
    * 2px se suma por afuera (por eso los 4px que se descuentan del alto).
    */
   box-sizing: content-box;
-  width: min(calc(100vw - 2rem - 4px), calc((var(--jz-alto) - 4px) * 240 / 426));
-  aspect-ratio: 240 / 426;
+  width: min(calc(100vw - 2rem - 4px), calc((var(--jz-alto) - 4px) * 240 / 360));
+  aspect-ratio: 240 / 360;
 
   position: relative;
   overflow: hidden;

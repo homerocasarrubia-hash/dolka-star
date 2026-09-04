@@ -1,8 +1,17 @@
 // Configuración base del juego. Solo constantes: sin lógica ni dibujado.
 
-/** Resolución lógica del canvas (píxeles del juego, no del monitor). */
+/**
+ * Resolución lógica del canvas (píxeles del juego, no del monitor).
+ *
+ * El alto se recortó de 426 a 360: abajo de la línea de piso no vive nada del
+ * juego, y las 104 filas que sobraban eran relleno plano. El recorte no toca
+ * ninguna constante de física —GROUND_Y, las líneas de ingredientes y el cartel
+ * siguen donde estaban— así que las ventanas de ejecución son las mismas.
+ * Si se cambia, hay que acompañarlo en juego.css: la relación de aspecto del
+ * marco está escrita ahí.
+ */
 export const GAME_WIDTH = 240;
-export const GAME_HEIGHT = 426;
+export const GAME_HEIGHT = 360;
 
 /** Timestep fijo: la lógica corre siempre a 60 pasos por segundo. */
 export const FPS = 60;
@@ -52,7 +61,7 @@ export const SLIDE_FRAMES = 30;
 export const SLIDE_BUFFER_FRAMES = 12;
 
 /**
- * Ventana de intención del toque, en frames (~116 ms). ADAPTATIVA: no es una
+ * Ventana de intención del toque, en frames (~50 ms). ADAPTATIVA: no es una
  * espera fija, es una gracia que se renueva con cada milímetro que el dedo baja.
  * La ventana se resuelve cuando el dedo deja de bajar, no cuando se agota un
  * contador, así un deslizamiento lento no alcanza a disparar el salto.
@@ -61,10 +70,16 @@ export const SLIDE_BUFFER_FRAMES = 12;
  * abajo el jugador brincaba antes de tirarse al piso. Aplica SOLO a touch:
  * teclado y mouse siguen instantáneos.
  *
- * Para un toque puro, sin movimiento, es el retardo real hasta el despegue:
- * no hay touchmove que renueve la gracia, así que salta en el frame 7.
+ * Para un toque puro, sin movimiento, es el retardo real hasta el despegue: no
+ * hay touchmove que renueve la gracia, así que salta en el frame 3.
+ *
+ * Por qué alcanza con 3 y no hacen falta 7: un swipe de verdad ya se está
+ * moviendo dentro de los primeros 50 ms, así que su primer touchmove renueva la
+ * gracia antes de que se agote. Si a los 3 frames el dedo no se movió nada, no
+ * era un swipe. Lo que se pierde es tolerancia a un swipe que arranca dudando:
+ * el dedo tiene 50 ms para empezar a bajar, no 116.
  */
-export const TOUCH_INTENT_FRAMES = 7;
+export const TOUCH_INTENT_FRAMES = 3;
 
 /**
  * Tope duro de la ventana adaptativa (~250 ms). Un dedo que baja muy despacio
@@ -234,6 +249,19 @@ export const FONDO = {
     MEDIA: 0.3,
     CALLE: 1,
   },
+  /**
+   * Aire que queda entre el DIBUJO de un panel medio y el del siguiente.
+   *
+   * No es "cuánto se superpone": es la separación que se ve. Se mide contra los
+   * márgenes transparentes reales de cada archivo, que no son iguales entre sí
+   * (el cerro tiene 17 px de margen y el local 58), así que encadenar por el
+   * ancho del archivo dejaba huecos distintos según qué panel viniera después.
+   * Midiendo el dibujo, la separación es siempre esta, la pongas donde la
+   * pongas y agregues las variantes que agregues.
+   *
+   * En 0 los dibujos se tocan; subilo si querés más respiro entre paneles.
+   */
+  MARGEN_PANEL: 16,
 } as const;
 
 /** Píxeles de scroll por punto de puntaje. */

@@ -8,18 +8,57 @@ import type { InputHTMLAttributes, ReactNode } from 'react';
 import { PALETTE } from './game/config';
 import { pixelFont } from './font';
 
+/** Foto del local, de fondo en las pantallas de menú. */
+export const FONDO_PORTADA = '/juego/sprites/bg-portada.png';
+
+/** `#RRGGBB` a `rgba(...)`, para las capas que oscurecen el fondo. */
+function conAlpha(hex: string, alpha: number): string {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+
 /**
- * Contenido de una pantalla. Ya NO se dimensiona a sí misma: el tamaño y la
+ * Contenido de una pantalla. NO se dimensiona a sí misma: el tamaño y la
  * relación de aspecto los pone el marco de la ruta (ver juego.css), así el
  * rectángulo es idéntico en todas las pantallas y no hay salto al cambiar.
+ *
+ * `oscurecer` es cuánto se tapa la foto de fondo, de 0 a 1. La foto tiene el
+ * cartel de neón y la puerta iluminada, que es justo donde el texto se pierde:
+ * la portada usa 0.72 porque el dibujo tiene que verse, y las pantallas de
+ * lectura usan 0.88, donde la foto queda como textura y nada más.
  */
-export function Pantalla({ children }: { children: ReactNode }) {
+export function Pantalla({
+  children,
+  fondo,
+  oscurecer = 0.72,
+}: {
+  children: ReactNode;
+  fondo?: string;
+  oscurecer?: number;
+}) {
   return (
-    <div
-      style={{ color: PALETTE.white }}
-      className="flex h-full w-full flex-col items-center overflow-y-auto px-5 py-5 font-mono text-[11px]"
-    >
-      {children}
+    <div className="relative h-full w-full">
+      {fondo && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-cover bg-center"
+          style={{
+            backgroundImage:
+              // Dos capas: un velo parejo y un refuerzo arriba y abajo, que es
+              // donde caen los títulos y los botones.
+              `linear-gradient(to bottom, ${conAlpha(PALETTE.frame, Math.min(1, oscurecer + 0.12))} 0%, ` +
+              `${conAlpha(PALETTE.frame, oscurecer)} 35%, ` +
+              `${conAlpha(PALETTE.frame, Math.min(1, oscurecer + 0.14))} 100%), ` +
+              `url(${fondo})`,
+          }}
+        />
+      )}
+      <div
+        style={{ color: PALETTE.white }}
+        className="relative flex h-full w-full flex-col items-center overflow-y-auto px-5 py-5 font-mono text-[11px]"
+      >
+        {children}
+      </div>
     </div>
   );
 }

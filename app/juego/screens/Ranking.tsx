@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { formatearRestante, tiempoHastaElCierre } from '@/lib/game/countdown';
 import { PALETTE } from '../game/config';
 import { mejorSemanal, type MejorSemanal } from '../game/prefs';
-import { Boton, Enlace, MensajeError, Pantalla, Titulo } from '../ui';
+import { Boton, Enlace, FONDO_PORTADA, MensajeError, Pantalla, Titulo } from '../ui';
 
 interface Puesto {
   posicion: number;
@@ -54,17 +54,27 @@ export default function Ranking({
   }, []);
 
   return (
-    <Pantalla>
-      <Titulo className="text-[13px]">RANKING</Titulo>
+    <Pantalla fondo={FONDO_PORTADA} oscurecer={0.88}>
+      <img
+        src="/juego/sprites/trofeo-hamburguesa.png"
+        alt=""
+        aria-hidden
+        width={72}
+        height={72}
+        className="shrink-0"
+      />
+      <Titulo className="mt-2 shrink-0 text-[13px]">RANKING</Titulo>
 
-      <p className="mt-2 text-center uppercase tracking-widest opacity-70">
-        Cierra en <span style={{ color: PALETTE.pickup }}>{restante}</span>
-      </p>
-      <p className="mb-3 text-center text-[9px] leading-snug opacity-50">
-        Domingo 23:59, hora de Argentina
+      {/* El premio lo define el negocio: acá va la misma frase que las reglas,
+          para no prometer nada que el código no pueda sostener. */}
+      <p className="mt-2 shrink-0 text-center leading-snug opacity-80">
+        Premio de la semana: se anuncia en{' '}
+        <span style={{ color: PALETTE.pickup }}>@dolkastar</span>
       </p>
 
-      <div className="w-full flex-1">
+      {/* La tabla es lo único que scrollea: con 20 puestos, el encabezado y el
+          botón de volver tienen que seguir a la vista. */}
+      <div className="mt-4 w-full min-h-0 flex-1 overflow-y-auto">
         {error && <MensajeError>{error}</MensajeError>}
 
         {!error && puestos === null && (
@@ -102,8 +112,17 @@ export default function Ranking({
         })}
       </div>
 
-      <div className="w-full pt-4">
-        <Boton onClick={onVolver}>VOLVER</Boton>
+      <div className="w-full shrink-0 pt-4">
+        <p className="text-center uppercase tracking-widest opacity-80">
+          Cierra en <span style={{ color: PALETTE.pickup }}>{restante}</span>
+        </p>
+        <p className="mt-1 text-center text-[9px] leading-snug opacity-60">
+          Domingo 23:59, hora de Argentina
+        </p>
+
+        <div className="pt-4">
+          <Boton onClick={onVolver}>VOLVER</Boton>
+        </div>
         <div className="mt-3 text-center">
           <Enlace onClick={onReglas}>Reglas del concurso</Enlace>
         </div>

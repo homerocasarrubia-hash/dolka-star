@@ -10,11 +10,10 @@ import {
   FONDO,
   PX_POR_CUADRO_DE_CORRIDA,
   PALETTE,
-  SPRITES,
   TUTORIAL,
   TUTORIAL_COPY,
 } from './config';
-import { spritesListos, type CapaFondo, type Fondo, type Frame } from './sprites';
+import { spritesListos, HUD_LADO, type CapaFondo, type Fondo, type Frame } from './sprites';
 import {
   ingredientHitbox,
   obstacleHitbox,
@@ -36,27 +35,48 @@ const HILLS: ReadonlyArray<{ x: number; w: number; h: number }> = [
 ];
 
 /**
+ * Cuánto avanza cada panel antes de que arranque el siguiente.
+ *
+ * NO es el ancho del archivo: los archivos traen márgenes transparentes a los
+ * costados y encadenar por el ancho los suma, dejando un hueco de aire entre
+ * dibujo y dibujo. Se descuentan los dos márgenes que se enfrentan y se deja
+ * solo la separación de `separacion`, así el aire que se ve es siempre el
+ * mismo aunque las variantes tengan márgenes distintos entre sí.
+ */
+function avances(capas: readonly CapaFondo[], separacion: number): number[] {
+  return capas.map((capa, i) => {
+    const siguiente = capas[(i + 1) % capas.length];
+    return capa.ancho - capa.margenDer - siguiente.margenIzq + separacion;
+  });
+}
+
+/**
  * Dibuja una capa repitiéndola hasta tapar el ancho de la pantalla.
  *
- * `capas` es una LISTA porque la capa media alterna variantes: el ciclo mide la
- * suma de los anchos y las variantes salen en el orden en que están en config.
- * Con una sola imagen en la lista, esto es el mosaico de siempre.
+ * `capas` es una LISTA porque la capa media alterna variantes: salen en el
+ * orden en que están en config y el ciclo mide la suma de sus avances. Con una
+ * sola imagen en la lista, esto es el mosaico de siempre.
  */
 function dibujarCapa(
   ctx: CanvasRenderingContext2D,
   capas: readonly CapaFondo[],
   desplazamiento: number,
+  separacion = 0,
 ): void {
   if (capas.length === 0) return;
 
-  const ciclo = capas.reduce((total, capa) => total + capa.ancho, 0);
+  const pasos = avances(capas, separacion);
+  const ciclo = pasos.reduce((total, paso) => total + paso, 0);
+  if (ciclo <= 0) return; // separación absurda: mejor no dibujar que colgarse
+
   // Módulo que también funciona con desplazamiento negativo.
   let x = -(((desplazamiento % ciclo) + ciclo) % ciclo);
 
   for (let i = 0; x < GAME_WIDTH; i += 1) {
-    const capa = capas[i % capas.length];
+    const indice = i % capas.length;
+    const capa = capas[indice];
     if (x + capa.ancho > 0) ctx.drawImage(capa.imagen, Math.round(x), capa.y);
-    x += capa.ancho;
+    x += pasos[indice];
   }
 }
 
@@ -71,7 +91,7 @@ function dibujarFondo(ctx: CanvasRenderingContext2D, state: GameState, fondo: Fo
   ctx.fillRect(0, 0, GAME_WIDTH, fondo.cielo.y);
   dibujarCapa(ctx, [fondo.cielo], state.scrolled * FONDO.VELOCIDAD.CIELO);
 
-  dibujarCapa(ctx, fondo.medias, state.scrolled * FONDO.VELOCIDAD.MEDIA);
+  dibujarCapa(ctx, fondo.medias, state.scrolled * FONDO.VELOCIDAD.MEDIA, FONDO.MARGEN_PANEL);
 
   dibujarCapa(ctx, [fondo.calle], state.scrolled * FONDO.VELOCIDAD.CALLE);
   // Abajo del archivo de la calle, el color de su última fila hasta el borde.
@@ -385,7 +405,7 @@ function drawTutorial(ctx: CanvasRenderingContext2D, state: GameState): void {
  * color, porque danger está reservado a los obstáculos.
  */
 /** Fila del canvas donde se apoya la capa de más abajo de la hamburguesa. */
-const BURGER_BASE_Y = 30;
+const BURGER_BASE_Y = 18;
 
 function drawBurger(ctx: CanvasRenderingContext2D, state: GameState): void {
   const parpadeo = state.errorFlashFrames > 0 && Math.floor(state.errorFlashFrames / 4) % 2 === 0;
@@ -395,11 +415,11 @@ function drawBurger(ctx: CanvasRenderingContext2D, state: GameState): void {
     // Las capas se apilan por su dibujo, no por su cuadro: cada ingrediente deja
     // distinta cantidad de aire dentro de sus 24x24 y apilando por el cuadro
     // quedarían separadas por huecos que no existen en el dibujo.
-    const x = GAME_WIDTH - 4 - SPRITES.ingredient.sprite.w;
+    const x = GAME_WIDTH - 4 - HUD_LADO;
     let base = BURGER_BASE_Y; // fila donde tiene que terminar la capa en curso
 
     for (let i = 0; i < INGREDIENT_ORDER.length; i += 1) {
-      const capa = sprites.ingredientes[INGREDIENT_ORDER[i]];
+      const capa = sprites.ingredientes[INGREDIENT_ORDER[i]].hud;
       const y = base - capa.ultimaFila;
 
       if (parpadeo) {

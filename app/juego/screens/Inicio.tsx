@@ -1,9 +1,12 @@
-// Pantalla de arranque.
+// Pantalla de arranque: la portada del juego.
+//
+// De arriba hacia abajo: logo, quién sos y tu récord, el perro como figura
+// principal, y los botones. El perro se lleva el espacio que sobra, así que en
+// una pantalla alta se ve entero y en una baja se achica solo sin empujar nada.
 'use client';
 
-import Image from 'next/image';
 import { PALETTE } from '../game/config';
-import { Boton, Enlace, MensajeError, Pantalla, Titulo } from '../ui';
+import { Boton, Enlace, FONDO_PORTADA, MensajeError, Pantalla } from '../ui';
 
 export default function Inicio({
   onJugar,
@@ -26,37 +29,44 @@ export default function Inicio({
   nombre: string | null;
 }) {
   return (
-    <Pantalla>
-      <div className="flex flex-1 flex-col items-center justify-center gap-5 py-4">
-        <Image
-          src="/assets/logodolka.jpg"
-          alt="Dolka Star"
-          width={72}
-          height={72}
-          className="object-cover"
-          priority
-        />
-        <Titulo className="text-[18px]">DOLKA RUN</Titulo>
+    <Pantalla fondo={FONDO_PORTADA} oscurecer={0.72}>
+      {/* El logo ya dice DOLKA RUN: no lleva título de texto al lado. */}
+      <img
+        src="/juego/sprites/logo-dolka-run.png"
+        alt="Dolka Run"
+        className="w-[72%] max-w-[240px] shrink-0 object-contain"
+      />
 
+      <div className="mt-3 shrink-0 text-center">
         {nombre && (
-          <div className="text-center">
+          <>
             <p className="uppercase tracking-widest">
               Hola, <span style={{ color: PALETTE.pickup }}>{nombre}</span>
             </p>
             <div className="mt-1 text-[9px]">
               <Enlace onClick={onCambiarNombre}>cambiar nombre</Enlace>
             </div>
-          </div>
+          </>
         )}
-
         {mejor > 0 && (
-          <p className="text-center uppercase tracking-widest opacity-70">
+          <p className="mt-2 uppercase tracking-widest opacity-70">
             Tu récord: <span style={{ color: PALETTE.pickup }}>{mejor}</span>
           </p>
         )}
       </div>
 
-      <div className="flex w-full flex-col gap-3 pb-2">
+      {/* min-h-0 es lo que deja que se achique en pantallas bajas en vez de
+          desbordar y empujar los botones fuera de vista. */}
+      <div className="flex min-h-0 w-full flex-1 items-center justify-center py-3">
+        <img
+          src="/juego/sprites/dolka-completo.png"
+          alt=""
+          aria-hidden
+          className="h-full max-h-[340px] w-auto object-contain"
+        />
+      </div>
+
+      <div className="flex w-full shrink-0 flex-col gap-3">
         {error && <MensajeError>{error}</MensajeError>}
         <Boton variante="primario" onClick={onJugar} disabled={cargando}>
           {cargando ? 'INICIANDO...' : 'JUGAR'}

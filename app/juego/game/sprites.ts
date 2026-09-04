@@ -71,11 +71,24 @@ export interface Frame extends Dibujo {
  * la hamburguesa y las filas que ocupa dentro de su cuadro de 24x24.
  */
 export interface DibujoIngrediente extends Dibujo {
-  /** Silueta blanca llena. Es el parpadeo de error del HUD. */
+  /** Versión chica, para el HUD. Ver `HUD_LADO`. */
+  hud: CapaHud;
+}
+
+/**
+ * El ingrediente en tamaño de HUD: la mitad del sprite del mundo.
+ *
+ * Se pre-calcula reducido, y el contorno y la silueta se arman DESDE la imagen
+ * ya reducida. Si se redujera al dibujar, el borde saldría de medio píxel y se
+ * vería sucio.
+ */
+export interface CapaHud {
+  imagen: CanvasImageSource;
+  /** Silueta blanca llena. Es el parpadeo de error. */
   silueta: CanvasImageSource;
   /** Solo el borde, tenue: las capas que todavía faltan juntar. */
   anillo: CanvasImageSource;
-  /** Primera y última fila con dibujo. Con esto el HUD apila las capas. */
+  /** Primera y última fila con dibujo, para apilar las capas sin huecos. */
   primeraFila: number;
   ultimaFila: number;
 }
@@ -86,6 +99,9 @@ export interface CapaFondo {
   ancho: number;
   /** Fila del canvas donde se dibuja el borde de arriba del archivo. */
   y: number;
+  /** Columnas transparentes que el archivo deja a cada lado del dibujo. */
+  margenIzq: number;
+  margenDer: number;
 }
 
 export interface Fondo {
@@ -379,14 +395,28 @@ function armarObstaculo(type: ObstacleType, img: HTMLImageElement): Dibujo {
  */
 function armarIngrediente(img: HTMLImageElement): DibujoIngrediente {
   const { sprite } = SPRITES.ingredient;
-  const { lienzo, primeraFila, ultimaFila } = prepararImagen(img, sprite.w, sprite.h);
+  const { lienzo } = prepararImagen(img, sprite.w, sprite.h);
 
   return {
     imagen: lienzo,
     ajusteX: 0,
     ajusteY: 0,
-    silueta: armarContorno(lienzo, sprite.w, sprite.h, PALETTE.white),
-    anillo: armarAnillo(lienzo, sprite.w, sprite.h, PALETTE.white),
+    hud: armarCapaHud(img),
+  };
+}
+
+/** Lado del ingrediente en el HUD: la mitad del sprite del mundo, 12x12. */
+export const HUD_LADO = SPRITES.ingredient.sprite.w / 2;
+
+function armarCapaHud(img: HTMLImageElement): CapaHud {
+  // Se reduce desde el ARCHIVO, no desde el lienzo ya armado: una sola
+  // interpolación en vez de dos encadenadas.
+  const { lienzo, primeraFila, ultimaFila } = prepararImagen(img, HUD_LADO, HUD_LADO, false);
+
+  return {
+    imagen: lienzo,
+    silueta: armarContorno(lienzo, HUD_LADO, HUD_LADO, PALETTE.white),
+    anillo: armarAnillo(lienzo, HUD_LADO, HUD_LADO, PALETTE.white),
     primeraFila,
     ultimaFila,
   };
@@ -409,6 +439,28 @@ function prepararCapa(img: HTMLImageElement): { lienzo: HTMLCanvasElement } & Pr
   return prepararImagen(img, img.naturalWidth, img.naturalHeight, false);
 }
 
+/** Columnas transparentes que el archivo deja a los costados del dibujo. */
+function margenes(lienzo: HTMLCanvasElement): { margenIzq: number; margenDer: number } {
+  const ctx = lienzo.getContext('2d');
+  if (!ctx) return { margenIzq: 0, margenDer: 0 };
+
+  const { width: ancho, height: alto } = lienzo;
+  const px = ctx.getImageData(0, 0, ancho, alto).data;
+  const conDibujo = (x: number): boolean => {
+    for (let y = 0; y < alto; y += 1) {
+      if (px[(y * ancho + x) * 4 + 3] > 0) return true;
+    }
+    return false;
+  };
+
+  let izq = 0;
+  while (izq < ancho && !conDibujo(izq)) izq += 1;
+  let der = 0;
+  while (der < ancho && !conDibujo(ancho - 1 - der)) der += 1;
+
+  return { margenIzq: izq, margenDer: der };
+}
+
 /**
  * Capa que se apoya en el piso: cielo y capas medias.
  *
@@ -422,6 +474,7 @@ function capaApoyada(img: HTMLImageElement): CapaFondo & { primeraFila: number; 
     imagen: lienzo,
     ancho: lienzo.width,
     y: GROUND_Y - 1 - ultimaFila,
+    ...margenes(lienzo),
     primeraFila,
     lienzo,
   };
@@ -439,6 +492,7 @@ function capaCalle(img: HTMLImageElement): CapaFondo & { fin: number; color: str
     imagen: lienzo,
     ancho: lienzo.width,
     y,
+    ...margenes(lienzo),
     fin: y + ultimaFila + 1,
     color: colorDeFila(lienzo, ultimaFila),
   };
