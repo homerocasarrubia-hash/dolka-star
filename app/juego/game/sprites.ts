@@ -73,6 +73,16 @@ export interface Frame extends Dibujo {
 export interface DibujoIngrediente extends Dibujo {
   /** Versión chica, para el HUD. Ver `HUD_LADO`. */
   hud: CapaHud;
+  /**
+   * La celda normalizada de 24x24, para las pantallas de HTML, que no pueden
+   * dibujar en el canvas del juego. Van las filas del dibujo para que la pila
+   * de "cómo se juega" se arme con la misma medición que el HUD.
+   */
+  celda: {
+    url: string;
+    primeraFila: number;
+    ultimaFila: number;
+  };
 }
 
 /**
@@ -173,7 +183,7 @@ interface Preparada {
  * hace) y una limpieza a ciegas se le comería píxeles.
  */
 function prepararImagen(
-  img: HTMLImageElement,
+  img: CanvasImageSource,
   ancho: number,
   alto: number,
   /**
@@ -394,32 +404,106 @@ function armarObstaculo(type: ObstacleType, img: HTMLImageElement): Dibujo {
 }
 
 /**
- * Prepara un ingrediente.
+ * Recorta el dibujo del archivo y lo centra en una celda de 24x24.
  *
- * Acá el cuadro Y la hitbox miden 24x24, así que no hay nada que corregir de
- * apoyo: el dibujo se pega donde está la hitbox y listo. Lo que sí se guarda es
- * dónde empieza y termina el dibujo, porque con eso el HUD apila las capas de
- * la hamburguesa sin huecos ni superposiciones.
+ * Los archivos NO vienen todos del mismo lienzo: dos de los ingredientes están
+ * exportados en 48x48 y dos en 24x24, con dibujos del mismo tamaño en los
+ * cuatro. Escalar el archivo entero a la celda achicaría a la mitad justo a los
+ * que vienen en 48. Por eso se toma solo el dibujo, medido del canal alfa, y se
+ * lo pega 1:1 centrado. Así el tamaño del lienzo del archivo deja de importar y
+ * se puede reexportar cualquiera sin tocar código.
+ */
+function normalizarIngrediente(img: HTMLImageElement): HTMLCanvasElement {
+  const { sprite } = SPRITES.ingredient;
+  const lado = sprite.w;
+
+  const crudo = document.createElement('canvas');
+  crudo.width = img.naturalWidth;
+  crudo.height = img.naturalHeight;
+  const cCrudo = crudo.getContext('2d');
+
+  const celda = document.createElement('canvas');
+  celda.width = lado;
+  celda.height = lado;
+  const cCelda = celda.getContext('2d');
+  if (!cCrudo || !cCelda) return celda;
+
+  cCrudo.imageSmoothingEnabled = false;
+  cCrudo.drawImage(img, 0, 0);
+
+  const caja = cajaDelDibujo(crudo);
+  cCelda.imageSmoothingEnabled = false;
+  if (!caja) return celda; // archivo vacío: celda vacía, no rompe nada
+
+  // Si el dibujo no entra en la celda se lo achica lo justo. No debería pasar:
+  // un ingrediente más grande que su hitbox se vería injusto en el juego.
+  const escala = Math.min(1, lado / caja.ancho, lado / caja.alto);
+  const ancho = Math.round(caja.ancho * escala);
+  const alto = Math.round(caja.alto * escala);
+  if (escala < 1) {
+    console.warn(`[juego] ingrediente más grande que su celda de ${lado}px: se achicó a ${ancho}x${alto}`);
+  }
+
+  cCelda.drawImage(
+    crudo,
+    caja.x, caja.y, caja.ancho, caja.alto,
+    Math.round((lado - ancho) / 2), Math.round((lado - alto) / 2), ancho, alto,
+  );
+  return celda;
+}
+
+/** Rectángulo que ocupa el dibujo dentro de un lienzo, medido del alfa. */
+function cajaDelDibujo(
+  lienzo: HTMLCanvasElement,
+): { x: number; y: number; ancho: number; alto: number } | null {
+  const ctx = lienzo.getContext('2d');
+  if (!ctx) return null;
+  const { width: w, height: h } = lienzo;
+  const px = ctx.getImageData(0, 0, w, h).data;
+
+  let x0 = w, x1 = -1, y0 = h, y1 = -1;
+  for (let y = 0; y < h; y += 1) {
+    for (let x = 0; x < w; x += 1) {
+      if (px[(y * w + x) * 4 + 3] === 0) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  return x1 < 0 ? null : { x: x0, y: y0, ancho: x1 - x0 + 1, alto: y1 - y0 + 1 };
+}
+
+/**
+ * Prepara un ingrediente a partir de su celda normalizada de 24x24, que es
+ * también el tamaño de su hitbox: el dibujo se pega donde está la caja que se
+ * junta. Se guardan además las filas que ocupa el dibujo, porque con eso el HUD
+ * y la pantalla de instrucciones apilan las capas sin huecos ni superposiciones.
  */
 function armarIngrediente(img: HTMLImageElement): DibujoIngrediente {
-  const { sprite } = SPRITES.ingredient;
-  const { lienzo } = prepararImagen(img, sprite.w, sprite.h);
+  const celda = normalizarIngrediente(img);
+  const caja = cajaDelDibujo(celda);
 
   return {
-    imagen: lienzo,
+    imagen: celda,
     ajusteX: 0,
     ajusteY: 0,
-    hud: armarCapaHud(img),
+    hud: armarCapaHud(celda),
+    celda: {
+      url: celda.toDataURL('image/png'),
+      primeraFila: caja ? caja.y : 0,
+      ultimaFila: caja ? caja.y + caja.alto - 1 : celda.height - 1,
+    },
   };
 }
 
 /** Lado del ingrediente en el HUD: la mitad del sprite del mundo, 12x12. */
 export const HUD_LADO = SPRITES.ingredient.sprite.w / 2;
 
-function armarCapaHud(img: HTMLImageElement): CapaHud {
-  // Se reduce desde el ARCHIVO, no desde el lienzo ya armado: una sola
-  // interpolación en vez de dos encadenadas.
-  const { lienzo, primeraFila, ultimaFila } = prepararImagen(img, HUD_LADO, HUD_LADO, false);
+function armarCapaHud(celda: HTMLCanvasElement): CapaHud {
+  // Se reduce desde la CELDA ya normalizada, así los cuatro entran con el mismo
+  // criterio sin importar en qué lienzo vino cada archivo.
+  const { lienzo, primeraFila, ultimaFila } = prepararImagen(celda, HUD_LADO, HUD_LADO, false);
   const { margenIzq, margenDer } = margenes(lienzo);
 
   return {

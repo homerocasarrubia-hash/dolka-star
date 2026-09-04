@@ -3,7 +3,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { PALETTE } from '../game/config';
+import { INGREDIENT_ORDER, PALETTE, SPRITES } from '../game/config';
+import { spritesListos } from '../game/sprites';
 import { Boton, FONDO_PORTADA, Pantalla, Titulo } from '../ui';
 
 /** Los sprites van al doble para que se lean, y sin suavizado. */
@@ -24,32 +25,66 @@ function Sprite({ src }: { src: string }) {
   );
 }
 
+/** La celda del ingrediente mide 24 y acá se dibuja al doble. */
+const ESCALA = 2;
+const CELDA = SPRITES.ingredient.sprite.w * ESCALA;
+
 /**
- * Las cuatro capas apiladas como en el HUD del juego: cada una apoya sobre el
- * dibujo de la de abajo, no sobre su cuadro. Los desplazamientos son las filas
- * que ocupa el dibujo dentro de cada cuadro de 24x24, al doble.
+ * Las cuatro capas apiladas como en el HUD del juego.
+ *
+ * Los desplazamientos NO son fijos: salen de las filas que ocupa el dibujo de
+ * cada archivo, medidas del canal alfa al cargar. Cada capa se ubica para que su
+ * última fila con dibujo caiga justo encima de la primera fila de la de abajo:
+ * ni superpuestas ni con hueco. Si mañana cambia un sprite, la pila se reacomoda
+ * sola sin tocar este archivo.
  */
-const CAPAS = [
-  { src: '/juego/sprites/ing-pan-arriba.png', top: 0 },
-  { src: '/juego/sprites/ing-queso.png', top: 12 },
-  { src: '/juego/sprites/ing-carne.png', top: 22 },
-  { src: '/juego/sprites/ing-pan-abajo.png', top: 36 },
-];
+function capasApiladas() {
+  const sprites = spritesListos();
+  if (!sprites) return null;
+
+  // INGREDIENT_ORDER ya viene de abajo hacia arriba: es el orden en que se
+  // junta la hamburguesa, y también el orden en que se apila.
+  const puestas: { url: string; top: number; arriba: number }[] = [];
+  let base = 0; // fila donde tiene que terminar el dibujo de la capa en curso
+
+  for (const tipo of INGREDIENT_ORDER) {
+    const { celda } = sprites.ingredientes[tipo];
+    // El dibujo de la fila r ocupa, al doble, las filas 2r y 2r+1.
+    const top = base - (celda.ultimaFila * ESCALA + ESCALA - 1);
+    const arriba = top + celda.primeraFila * ESCALA;
+    puestas.push({ url: celda.url, top, arriba });
+    base = arriba - 1; // la próxima termina justo encima de esta
+  }
+
+  // La pila se armó hacia arriba desde 0, así que arranca en negativo: se la
+  // corre entera para centrarla en el cuadro del paso.
+  const arribaDeTodo = Math.min(...puestas.map((p) => p.arriba));
+  const alto = 0 - arribaDeTodo + 1;
+  const corrimiento = Math.round((LADO - alto) / 2) - arribaDeTodo;
+
+  return puestas.map((p) => ({ ...p, top: p.top + corrimiento }));
+}
 
 function Hamburguesa() {
+  const capas = capasApiladas();
+  if (!capas) return <div style={{ width: LADO, height: LADO }} />;
+
   return (
     <div className="relative" style={{ width: LADO, height: LADO }}>
-      {CAPAS.map((capa) => (
+      {capas.map((capa, i) => (
         <img
-          key={capa.src}
-          src={capa.src}
+          key={i}
+          src={capa.url}
           alt=""
           aria-hidden
-          width={48}
-          height={48}
-          // +7 centra la pila dentro del cuadro: el dibujo mide 54 de los 96 y
-          // el pan de arriba ya trae 14 filas de aire propias.
-          style={{ ...PIXELADO, position: 'absolute', left: 24, top: capa.top + 7 }}
+          width={CELDA}
+          height={CELDA}
+          style={{
+            ...PIXELADO,
+            position: 'absolute',
+            left: (LADO - CELDA) / 2,
+            top: capa.top,
+          }}
         />
       ))}
     </div>
