@@ -9,6 +9,7 @@ import {
   MULTIPLIER_FRAMES,
   PX_POR_CUADRO_DE_CORRIDA,
   PALETTE,
+  SPRITES,
   TUTORIAL,
   TUTORIAL_COPY,
 } from './config';
@@ -107,12 +108,25 @@ const FORMA_INGREDIENTE: Record<string, { desde: number; alto: number; domo: boo
 };
 
 function drawIngredients(ctx: CanvasRenderingContext2D, ingredients: Ingredient[]): void {
+  const sprites = spritesListos();
+
   ctx.fillStyle = PALETTE.pickup;
   for (const ing of ingredients) {
     if (!ing.active) continue;
     const box = ingredientHitbox(ing);
     const x = Math.round(box.x);
     const y = Math.round(box.y);
+
+    // El cuadro del sprite y la hitbox miden lo mismo, 24x24: el dibujo se pega
+    // justo donde está la caja que se junta. Sin contorno, que es del jugador.
+    const dibujo = sprites?.ingredientes[ing.type];
+    if (dibujo) {
+      ctx.drawImage(dibujo.imagen, x, y);
+      continue;
+    }
+
+    // Respaldo por código: se distinguen por FORMA, porque el color de todos
+    // los ingredientes es pickup.
     const forma = FORMA_INGREDIENTE[ing.type];
     const alto = Math.round(box.h * forma.alto);
     const top = y + Math.round(box.h * forma.desde);
@@ -324,14 +338,48 @@ function drawTutorial(ctx: CanvasRenderingContext2D, state: GameState): void {
  * Al errar, todas parpadean en white: el error se marca por parpadeo y no por
  * color, porque danger está reservado a los obstáculos.
  */
+/** Fila del canvas donde se apoya la capa de más abajo de la hamburguesa. */
+const BURGER_BASE_Y = 30;
+
 function drawBurger(ctx: CanvasRenderingContext2D, state: GameState): void {
+  const parpadeo = state.errorFlashFrames > 0 && Math.floor(state.errorFlashFrames / 4) % 2 === 0;
+  const sprites = spritesListos();
+
+  if (sprites) {
+    // Las capas se apilan por su dibujo, no por su cuadro: cada ingrediente deja
+    // distinta cantidad de aire dentro de sus 24x24 y apilando por el cuadro
+    // quedarían separadas por huecos que no existen en el dibujo.
+    const x = GAME_WIDTH - 4 - SPRITES.ingredient.sprite.w;
+    let base = BURGER_BASE_Y; // fila donde tiene que terminar la capa en curso
+
+    for (let i = 0; i < INGREDIENT_ORDER.length; i += 1) {
+      const capa = sprites.ingredientes[INGREDIENT_ORDER[i]];
+      const y = base - capa.ultimaFila;
+
+      if (parpadeo) {
+        ctx.globalAlpha = 1;
+        ctx.drawImage(capa.silueta, x - 1, y - 1);
+      } else if (i < state.sequenceIndex) {
+        ctx.globalAlpha = 1;
+        ctx.drawImage(capa.imagen, x, y);
+      } else {
+        ctx.globalAlpha = 0.3;
+        ctx.drawImage(capa.anillo, x - 1, y - 1);
+      }
+
+      // La próxima capa apoya justo encima de esta.
+      base = y + capa.primeraFila - 1;
+    }
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  // Respaldo por código: capas como barras.
   const ancho = 20;
   const alto = 4;
   const sep = 1;
   const x = GAME_WIDTH - 4 - ancho;
   const base = 16; // y de la capa de más abajo
-
-  const parpadeo = state.errorFlashFrames > 0 && Math.floor(state.errorFlashFrames / 4) % 2 === 0;
 
   for (let i = 0; i < INGREDIENT_ORDER.length; i += 1) {
     const y = base - i * (alto + sep);
@@ -364,7 +412,9 @@ function drawMultiplier(ctx: CanvasRenderingContext2D, state: GameState): void {
 
   const ancho = 20;
   const x = GAME_WIDTH - 4 - ancho;
-  const y = 22;
+  // Debajo de la hamburguesa, que desde que se dibuja con sprites llega hasta
+  // la fila BURGER_BASE_Y.
+  const y = BURGER_BASE_Y + 6;
 
   ctx.fillStyle = PALETTE.accent;
   ctx.textAlign = 'right';

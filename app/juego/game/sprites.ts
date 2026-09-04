@@ -4,7 +4,13 @@
 // puede quedarse esperando una imagen, ni recalcular contornos o buscar el
 // borde inferior del dibujo por frame.
 
-import { OBSTACLE_SPRITE, SPRITES, PALETTE, type ObstacleType } from './config';
+import {
+  OBSTACLE_SPRITE,
+  SPRITES,
+  PALETTE,
+  type IngredientType,
+  type ObstacleType,
+} from './config';
 
 /**
  * Los archivos, agrupados por estado. La corrida es el único grupo con más de
@@ -25,6 +31,13 @@ const RUTAS_OBSTACULOS: Record<ObstacleType, string> = {
   CAJON: '/juego/sprites/obs-cajon.png',
   MOTO: '/juego/sprites/obs-moto.png',
   CARTEL: '/juego/sprites/obs-cartel.png',
+};
+
+const RUTAS_INGREDIENTES: Record<IngredientType, string> = {
+  PAN_ABAJO: '/juego/sprites/ing-pan-abajo.png',
+  CARNE: '/juego/sprites/ing-carne.png',
+  QUESO: '/juego/sprites/ing-queso.png',
+  PAN_ARRIBA: '/juego/sprites/ing-pan-arriba.png',
 };
 
 /** Un dibujo listo para pegar en el canvas, ya corregido de apoyo. */
@@ -51,12 +64,27 @@ export interface Frame extends Dibujo {
   contorno: CanvasImageSource;
 }
 
+/**
+ * Un ingrediente: además del dibujo, las dos versiones que necesita el HUD de
+ * la hamburguesa y las filas que ocupa dentro de su cuadro de 24x24.
+ */
+export interface DibujoIngrediente extends Dibujo {
+  /** Silueta blanca llena. Es el parpadeo de error del HUD. */
+  silueta: CanvasImageSource;
+  /** Solo el borde, tenue: las capas que todavía faltan juntar. */
+  anillo: CanvasImageSource;
+  /** Primera y última fila con dibujo. Con esto el HUD apila las capas. */
+  primeraFila: number;
+  ultimaFila: number;
+}
+
 export interface Sprites {
   correr: Frame[];
   saltar: Frame;
   deslizar: Frame;
   golpe: Frame;
   obstaculos: Record<ObstacleType, Dibujo>;
+  ingredientes: Record<IngredientType, DibujoIngrediente>;
 }
 
 let cargados: Sprites | null = null;
@@ -81,9 +109,10 @@ function cargarImagen(ruta: string): Promise<HTMLImageElement> {
  */
 const UMBRAL_FONDO = 240;
 
-/** Imagen ya lista, más la última fila del cuadro donde hay dibujo. */
+/** Imagen ya lista, más las filas del cuadro donde hay dibujo. */
 interface Preparada {
   lienzo: HTMLCanvasElement;
+  primeraFila: number;
   ultimaFila: number;
 }
 
@@ -101,7 +130,7 @@ function prepararImagen(img: HTMLImageElement, ancho: number, alto: number): Pre
   lienzo.width = ancho;
   lienzo.height = alto;
   const ctx = lienzo.getContext('2d');
-  if (!ctx) return { lienzo, ultimaFila: alto - 1 };
+  if (!ctx) return { lienzo, primeraFila: 0, ultimaFila: alto - 1 };
 
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(img, 0, 0, ancho, alto);
@@ -118,23 +147,31 @@ function prepararImagen(img: HTMLImageElement, ancho: number, alto: number): Pre
     ctx.putImageData(datos, 0, 0);
   }
 
-  // Borde inferior real del dibujo, ignorando el aire de abajo del cuadro.
+  // Bordes reales del dibujo, ignorando el aire que deja el cuadro.
+  const conDibujo = (y: number): boolean => {
+    for (let x = 0; x < ancho; x += 1) {
+      if (px[(y * ancho + x) * 4 + 3] > 0) return true;
+    }
+    return false;
+  };
+
   let ultimaFila = alto - 1;
   for (let y = alto - 1; y >= 0; y -= 1) {
-    let hayDibujo = false;
-    for (let x = 0; x < ancho; x += 1) {
-      if (px[(y * ancho + x) * 4 + 3] > 0) {
-        hayDibujo = true;
-        break;
-      }
-    }
-    if (hayDibujo) {
+    if (conDibujo(y)) {
       ultimaFila = y;
       break;
     }
   }
 
-  return { lienzo, ultimaFila };
+  let primeraFila = 0;
+  for (let y = 0; y < alto; y += 1) {
+    if (conDibujo(y)) {
+      primeraFila = y;
+      break;
+    }
+  }
+
+  return { lienzo, primeraFila, ultimaFila };
 }
 
 /**
@@ -177,7 +214,12 @@ function quitarFondoBlanco(px: Uint8ClampedArray, ancho: number, alto: number): 
  * se tiñe todo de accent con 'source-in'. Queda la silueta engordada 1px; al
  * poner la imagen original encima, lo único que asoma es el borde.
  */
-function armarContorno(img: CanvasImageSource, ancho: number, alto: number): HTMLCanvasElement {
+function armarContorno(
+  img: CanvasImageSource,
+  ancho: number,
+  alto: number,
+  color: string = PALETTE.accent,
+): HTMLCanvasElement {
   const lienzo = document.createElement('canvas');
   lienzo.width = ancho + 2;
   lienzo.height = alto + 2;
@@ -192,9 +234,24 @@ function armarContorno(img: CanvasImageSource, ancho: number, alto: number): HTM
   for (const [dx, dy] of desplazamientos) ctx.drawImage(img, dx, dy, ancho, alto);
 
   ctx.globalCompositeOperation = 'source-in';
-  ctx.fillStyle = PALETTE.accent;
+  ctx.fillStyle = color;
   ctx.fillRect(0, 0, lienzo.width, lienzo.height);
 
+  return lienzo;
+}
+
+/**
+ * Solo el borde de la silueta, sin relleno: la silueta engordada a la que se le
+ * saca el sprite de adentro. Es la capa "todavía no la juntaste" del HUD, que
+ * tiene que leerse como el hueco de un ingrediente y no como una mancha.
+ */
+function armarAnillo(img: CanvasImageSource, ancho: number, alto: number, color: string): HTMLCanvasElement {
+  const lienzo = armarContorno(img, ancho, alto, color);
+  const ctx = lienzo.getContext('2d');
+  if (!ctx) return lienzo;
+
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.drawImage(img, 1, 1, ancho, alto);
   return lienzo;
 }
 
@@ -279,6 +336,29 @@ function armarObstaculo(type: ObstacleType, img: HTMLImageElement): Dibujo {
 }
 
 /**
+ * Prepara un ingrediente.
+ *
+ * Acá el cuadro Y la hitbox miden 24x24, así que no hay nada que corregir de
+ * apoyo: el dibujo se pega donde está la hitbox y listo. Lo que sí se guarda es
+ * dónde empieza y termina el dibujo, porque con eso el HUD apila las capas de
+ * la hamburguesa sin huecos ni superposiciones.
+ */
+function armarIngrediente(img: HTMLImageElement): DibujoIngrediente {
+  const { sprite } = SPRITES.ingredient;
+  const { lienzo, primeraFila, ultimaFila } = prepararImagen(img, sprite.w, sprite.h);
+
+  return {
+    imagen: lienzo,
+    ajusteX: 0,
+    ajusteY: 0,
+    silueta: armarContorno(lienzo, sprite.w, sprite.h, PALETTE.white),
+    anillo: armarAnillo(lienzo, sprite.w, sprite.h, PALETTE.white),
+    primeraFila,
+    ultimaFila,
+  };
+}
+
+/**
  * Carga los sprites una sola vez. Si alguno falla devuelve null y el juego
  * sigue con los rectángulos: quedarse sin poder jugar por una imagen que no
  * bajó sería peor que jugar con el placeholder.
@@ -289,17 +369,25 @@ export function cargarSprites(): Promise<Sprites | null> {
 
   const grupos = [RUTAS.correr, RUTAS.saltar, RUTAS.deslizar, RUTAS.golpe];
   const tipos = Object.keys(RUTAS_OBSTACULOS) as ObstacleType[];
+  const ingredientes = Object.keys(RUTAS_INGREDIENTES) as IngredientType[];
 
   // Todo junto: el preloader no larga la pantalla de inicio hasta que estén
-  // también los obstáculos, así no arranca una partida a medio dibujar.
+  // también los obstáculos y los ingredientes, así no arranca una partida a
+  // medio dibujar.
   enCurso = Promise.all([
     Promise.all(grupos.map((rutas) => Promise.all(rutas.map(cargarImagen)))),
     Promise.all(tipos.map((t) => cargarImagen(RUTAS_OBSTACULOS[t]))),
+    Promise.all(ingredientes.map((t) => cargarImagen(RUTAS_INGREDIENTES[t]))),
   ])
-    .then(([[correr, saltar, deslizar, golpe], imagenesObstaculos]) => {
+    .then(([[correr, saltar, deslizar, golpe], imagenesObstaculos, imagenesIngredientes]) => {
       const obstaculos = {} as Record<ObstacleType, Dibujo>;
       tipos.forEach((t, i) => {
         obstaculos[t] = armarObstaculo(t, imagenesObstaculos[i]);
+      });
+
+      const dibujosIngredientes = {} as Record<IngredientType, DibujoIngrediente>;
+      ingredientes.forEach((t, i) => {
+        dibujosIngredientes[t] = armarIngrediente(imagenesIngredientes[i]);
       });
 
       cargados = {
@@ -308,6 +396,7 @@ export function cargarSprites(): Promise<Sprites | null> {
         deslizar: armarGrupo(deslizar)[0],
         golpe: armarGrupo(golpe)[0],
         obstaculos,
+        ingredientes: dibujosIngredientes,
       };
       return cargados;
     })
