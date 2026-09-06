@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from 'react';
 import './juego.css';
 import { BarraSuperior, ColumnaArte, VARIABLES_DE_TEMA } from './layout-piezas';
 import { mejorPuntaje, obtenerPerfil, obtenerPlayerId, type Perfil } from './game/prefs';
+import { musicaDeLaPartida, pararMusica, sonidoDeDerrota } from './game/audio';
 import { cargarSprites } from './game/sprites';
 import Cargando from './screens/Cargando';
 import ComoSeJuega from './screens/ComoSeJuega';
@@ -64,6 +65,9 @@ export default function GameClient() {
 
     return () => {
       vivo = false;
+      // Al salir de la ruta (el link a DOLKA STAR, por ejemplo) no puede quedar
+      // sonando la música por atrás.
+      pararMusica();
     };
   }, []);
 
@@ -105,6 +109,9 @@ export default function GameClient() {
 
       setSessionId(id);
       setScore(0);
+      // La música arranca de cero en cada partida. Si está silenciado no suena
+      // nada, y si el mp3 no cargó tampoco: no bloquea el arranque.
+      musicaDeLaPartida();
       setPantalla('JUGANDO');
     } catch {
       setErrorInicio('No hay conexión. Revisá internet y probá de nuevo.');
@@ -114,6 +121,8 @@ export default function GameClient() {
   }, [playerId]);
 
   const terminar = useCallback((puntaje: number) => {
+    // Para la música y suena la derrota, en ese orden: no se pisan.
+    sonidoDeDerrota();
     setScore(puntaje);
     setPantalla('GAME_OVER');
   }, []);

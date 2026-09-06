@@ -25,24 +25,38 @@ export default function HomePage() {
             <p className="text-lg md:text-xl font-body mb-8 text-white/80">
               Hamburguesas · Lomitos · Pizzas al horno de barro
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+            {/*
+              En celular son cuatro botones apilados, todos del mismo ancho.
+              En escritorio los tres de siempre van en fila y DOLKA RUN queda
+              abajo, ocupando el ancho de los tres: es el que lleva al juego y
+              conviene que se lea aparte.
+            */}
+            <div className="flex flex-col gap-4 items-stretch sm:items-start w-full sm:w-fit mx-auto md:mx-0">
+              <div className="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+                <Link
+                  href="/menu"
+                  className="bg-white text-red-logo font-display text-lg px-8 py-3 rounded hover:bg-cream transition-colors text-center"
+                >
+                  VER MENÚ
+                </Link>
+                <Link
+                  href="/contacto"
+                  className="border-2 border-white text-white font-display text-lg px-8 py-3 rounded hover:bg-white hover:text-red-logo transition-colors text-center"
+                >
+                  CONTACTO
+                </Link>
+                <Link
+                  href="/club"
+                  className="bg-gold text-white font-display text-lg px-8 py-3 rounded hover:bg-gold/90 transition-colors text-center"
+                >
+                  DOLKA CLUB
+                </Link>
+              </div>
               <Link
-                href="/menu"
-                className="bg-white text-red-logo font-display text-lg px-8 py-3 rounded hover:bg-cream transition-colors"
+                href="/juego"
+                className="bg-run-cyan text-ink font-display text-lg px-8 py-3 rounded hover:bg-run-cyan/90 transition-colors text-center w-full"
               >
-                VER MENÚ
-              </Link>
-              <Link
-                href="/contacto"
-                className="border-2 border-white text-white font-display text-lg px-8 py-3 rounded hover:bg-white hover:text-red-logo transition-colors"
-              >
-                CONTACTO
-              </Link>
-              <Link
-                href="/club"
-                className="bg-gold text-white font-display text-lg px-8 py-3 rounded hover:bg-gold/90 transition-colors"
-              >
-                DOLKA CLUB
+                DOLKA RUN
               </Link>
             </div>
           </div>

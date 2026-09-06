@@ -13,6 +13,8 @@ const config: Config = {
         cream: "#EEE7D4",
         ink: "#0B1014",
         gold: "#D4AF37",
+        // El cian de Dolka Run: mismo accent que usa el juego (PALETTE.accent).
+        "run-cyan": "#3DF0E0",
       },
       fontFamily: {
         display: ["Anton", "Oswald", "sans-serif"],

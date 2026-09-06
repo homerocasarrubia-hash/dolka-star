@@ -6,7 +6,8 @@
 'use client';
 
 import Link from 'next/link';
-import type { CSSProperties, ReactNode } from 'react';
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { alternarSilencio, estaSilenciado, prepararAudio } from './game/audio';
 import { PALETTE } from './game/config';
 import { pixelFont } from './font';
 
@@ -57,11 +58,82 @@ export const VARIABLES_DE_TEMA: CSSProperties = {
   '--jz-estrellas': patronDeEstrellas(),
 } as CSSProperties;
 
+/**
+ * Parlante en pixel art, dibujado con rects para que no tenga antialias y
+ * acompañe al resto. Con ondas cuando hay sonido, con una cruz cuando no.
+ */
+function IconoSonido({ silenciado }: { silenciado: boolean }) {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      shapeRendering="crispEdges"
+      fill="currentColor"
+      aria-hidden
+    >
+      <rect x="2" y="6" width="3" height="4" />
+      <rect x="5" y="5" width="1" height="6" />
+      <rect x="6" y="4" width="1" height="8" />
+      <rect x="7" y="3" width="1" height="10" />
+      {silenciado ? (
+        <>
+          <rect x="10" y="5" width="1" height="1" />
+          <rect x="11" y="6" width="1" height="1" />
+          <rect x="12" y="7" width="1" height="1" />
+          <rect x="13" y="8" width="1" height="1" />
+          <rect x="13" y="5" width="1" height="1" />
+          <rect x="12" y="6" width="1" height="1" />
+          <rect x="11" y="7" width="1" height="1" />
+          <rect x="10" y="8" width="1" height="1" />
+        </>
+      ) : (
+        <>
+          <rect x="10" y="6" width="1" height="4" />
+          <rect x="12" y="4" width="1" height="8" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/**
+ * Botón de sonido. Vive en la barra, que está en todas las pantallas, así que
+ * se puede silenciar sin salir de la partida.
+ *
+ * El estado se lee del módulo de audio, no de una prop: la barra no se vuelve a
+ * renderizar sola cuando cambia, por eso guarda una copia local.
+ */
+function BotonSonido() {
+  const [silenciado, setSilenciado] = useState(true);
+
+  useEffect(() => {
+    prepararAudio();
+    setSilenciado(estaSilenciado());
+  }, []);
+
+  return (
+    <button
+      type="button"
+      onClick={() => setSilenciado(alternarSilencio())}
+      className="juego-barra-sonido"
+      aria-pressed={silenciado}
+      aria-label={silenciado ? 'Activar sonido' : 'Silenciar'}
+      title={silenciado ? 'Activar sonido' : 'Silenciar'}
+    >
+      <IconoSonido silenciado={silenciado} />
+    </button>
+  );
+}
+
 export function BarraSuperior({ nombre }: { nombre: string | null }) {
   return (
     <header className={`juego-barra ${pixelFont.className}`}>
       <Link href="/">← DOLKA STAR</Link>
-      <span className="juego-barra-jugador">{nombre ?? ''}</span>
+      <div className="juego-barra-derecha">
+        <span className="juego-barra-jugador">{nombre ?? ''}</span>
+        <BotonSonido />
+      </div>
     </header>
   );
 }
