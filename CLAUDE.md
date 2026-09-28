@@ -90,3 +90,68 @@ dolka-star/
 - [ ] Texto de "Nosotros" (historia del bar)
 - [ ] Confirmar mecánica final del Club Dolka Star
 - [ ] Dominio (cuando esté listo, conectar en Vercel)
+
+## Sistema de Gestión Interna — Plan
+
+### Objetivo
+Reemplazar el carrito de pedidos actual (que envía por WhatsApp) por un sistema propio
+con tres apps conectadas en tiempo real. Los pedidos del sitio llegan directamente a la
+app de cocina y al admin, sin intervención manual.
+
+### Stack
+- Backend: Next.js API Routes + Prisma + Neon Postgres (mismo que ya usa el proyecto)
+- Tiempo real: Pusher (free tier cubre el volumen de Dolka Star)
+- Apps: PWA (instalables desde el navegador, sin App Store)
+- Dominio admin: admin.dolkastar.com (a configurar en Vercel cuando esté listo)
+
+### Las 3 apps
+
+**App Cocina** — tablet fija en la cocina
+- Comandas entrantes en tiempo real con alerta sonora
+- Muestra: platos, variantes, aclaraciones, local, modalidad (mesa/llevar/dirección)
+- Estados: Nuevo → En preparación → Listo
+- Vista clara, letra grande, sin distracciones
+
+**App Admin/Caja** — computadora del local
+- Lista de pedidos del día con estado y filtros (local, modalidad, estado)
+- Historial y reportes básicos (ventas del día, platos más pedidos)
+- Gestión del menú (precios, disponibilidad de platos)
+
+**App Mozo** — PWA en celular
+- Tomar pedidos en mesa
+- Ver estado de pedidos activos
+- Marcar pedidos como entregados
+
+### Flujo de un pedido
+1. Cliente hace pedido en dolkastar.com/menu (carrito existente)
+2. Al confirmar, se guarda en DB tabla `Pedido` y se dispara evento Pusher
+3. App Cocina y App Admin reciben el pedido en tiempo real
+4. Cocina cambia estado → "En preparación" → "Listo"
+5. (Futuro) WhatsApp automático al cliente cuando esté listo
+
+### Módulos — orden de desarrollo
+1. 🔴 Tabla `Pedido` en DB (Prisma schema + migración)
+2. 🔴 API route POST /api/pedidos (guardar + disparar evento Pusher)
+3. 🔴 App Cocina — /cocina (comandas en tiempo real, PWA)
+4. 🟡 App Admin — /admin (lista de pedidos, filtros, historial)
+5. 🟡 App Mozo — /mozo (toma de pedidos en mesa, PWA)
+6. 🟢 Gestión de menú desde admin
+7. 🟢 Reportes y métricas
+8. 🟢 Notificación WhatsApp al cliente cuando el pedido está listo
+9. 🟢 Control de stock
+10. 🟢 Facturación AFIP
+
+### Variables de entorno necesarias (agregar a .env.local y Vercel)
+PUSHER_APP_ID=
+PUSHER_KEY=
+PUSHER_SECRET=
+PUSHER_CLUSTER=
+NEXT_PUBLIC_PUSHER_KEY=
+NEXT_PUBLIC_PUSHER_CLUSTER=
+
+### Decisiones de diseño
+- Dos locales desde el arranque: andalgala y belen
+- La cocina de cada local solo ve sus propios pedidos (filtrado por `local`)
+- El admin puede ver los dos locales con filtro
+- Las rutas /cocina y /admin requieren autenticación simple (password por local)
+- Los pedidos del sitio web reemplazan el carrito actual que enviaba por WhatsApp

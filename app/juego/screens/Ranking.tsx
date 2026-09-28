@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { formatearRestante, tiempoHastaElCierre } from '@/lib/game/countdown';
 import { PALETTE } from '../game/config';
 import { mejorSemanal, type MejorSemanal } from '../game/prefs';
+import { LOCALES, localGuardado, type LocalId } from '@/data/locales';
 import { Boton, Enlace, FONDO_PORTADA, MensajeError, Pantalla, Titulo } from '../ui';
 
 interface Puesto {
@@ -24,14 +25,20 @@ export default function Ranking({
   const [error, setError] = useState<string | null>(null);
   const [mio, setMio] = useState<MejorSemanal | null>(null);
   const [restante, setRestante] = useState('');
+  // El local vive en localStorage, que no existe en el render del servidor: se
+  // lee en un efecto, igual que el resto de las preferencias.
+  const [local, setLocal] = useState<LocalId | null>(null);
 
   useEffect(() => {
-    setMio(mejorSemanal());
+    const elegido = localGuardado();
+    setLocal(elegido);
+    setMio(mejorSemanal(elegido));
   }, []);
 
   useEffect(() => {
+    if (local === null) return;
     let vivo = true;
-    fetch('/api/leaderboard')
+    fetch(`/api/leaderboard?local=${local}`)
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('respuesta no ok'))))
       .then((datos: { puestos: Puesto[] }) => {
         if (vivo) setPuestos(datos.puestos);
@@ -42,7 +49,7 @@ export default function Ranking({
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [local]);
 
   // El contador se recalcula contra la hora de Argentina en cada tick, no se
   // va restando solo: así un cambio de hora o una pestaña dormida no lo desfasan.
@@ -63,7 +70,9 @@ export default function Ranking({
         height={72}
         className="shrink-0"
       />
-      <Titulo className="mt-2 shrink-0 text-[13px]">RANKING</Titulo>
+      <Titulo className="mt-2 shrink-0 text-[13px]">
+        RANKING{local ? ` ${LOCALES[local].ciudad.toUpperCase()}` : ''}
+      </Titulo>
 
       {/* El premio lo define el negocio: acá va la misma frase que las reglas,
           para no prometer nada que el código no pueda sostener. */}

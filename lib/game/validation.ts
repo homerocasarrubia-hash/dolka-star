@@ -1,6 +1,7 @@
 // Validación de lo que manda el cliente al registrar un puntaje.
 // Cada función devuelve null si está bien, o el mensaje de error si no.
 
+import { esLocalId, LOCAL_POR_DEFECTO, type LocalId } from '@/data/locales';
 import { tienePalabraProhibida } from './badwords';
 import { PLAYER_NAME_MAX, PLAYER_NAME_MIN } from './server-config';
 
@@ -78,4 +79,20 @@ export function validarScore(valor: unknown, max: number): { error: string } | {
   if (valor <= 0) return { error: 'El puntaje tiene que ser mayor a cero.' };
   if (valor >= max) return { error: 'El puntaje excede el máximo posible.' };
   return { score: valor };
+}
+
+/**
+ * Local donde se jugó la partida.
+ *
+ * Si no viene, se asume el local original: los puntajes de antes de que
+ * existiera Belén son de Andalgalá. Si viene pero no es uno de los dos, se
+ * rechaza en vez de adivinar: un valor raro acá ensucia el ranking y el
+ * cliente sabe perfectamente cuál mandar.
+ */
+export function validarLocal(valor: unknown): { error: string } | { local: LocalId } {
+  if (valor === undefined || valor === null || valor === '') {
+    return { local: LOCAL_POR_DEFECTO };
+  }
+  if (!esLocalId(valor)) return { error: 'El local de la partida no es válido.' };
+  return { local: valor };
 }

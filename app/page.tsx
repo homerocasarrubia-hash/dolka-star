@@ -1,6 +1,7 @@
 import CheckeredDivider from "@/components/CheckeredDivider";
 import DeliveryBanner from "@/components/DeliveryBanner";
 import HeroCarousel from "@/components/HeroCarousel";
+import IntroLocal from "@/components/IntroLocal";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -40,10 +41,10 @@ export default function HomePage() {
                   VER MENÚ
                 </Link>
                 <Link
-                  href="/contacto"
+                  href="/menu"
                   className="border-2 border-white text-white font-display text-lg px-8 py-3 rounded hover:bg-white hover:text-red-logo transition-colors text-center"
                 >
-                  CONTACTO
+                  HACER PEDIDO
                 </Link>
                 <Link
                   href="/club"
@@ -77,11 +78,7 @@ export default function HomePage() {
         <h2 className="font-display text-4xl text-red-primary mb-4">
           Rock &apos;n&apos; roll de bar
         </h2>
-        <p className="font-body text-ink/80 text-lg leading-relaxed">
-          En el corazón de Andalgalá, hacemos hamburguesas sin vueltas: buena
-          carne, pan artesanal y sabor directo al hueso. También pizzas al
-          horno de barro y lomitos que hablan por sí solos.
-        </p>
+        <IntroLocal />
       </section>
 
       <CheckeredDivider />

@@ -92,8 +92,12 @@ export interface MejorSemanal {
   score: number;
 }
 
-export function mejorSemanal(): MejorSemanal | null {
-  const crudo = leer(CLAVE_SEMANAL);
+/**
+ * El mejor de la semana se guarda POR LOCAL: cada uno tiene su ranking, así que
+ * el puntaje propio que se resalta en la tabla depende de cuál se esté mirando.
+ */
+export function mejorSemanal(local: string): MejorSemanal | null {
+  const crudo = leer(`${CLAVE_SEMANAL}.${local}`);
   if (!crudo) return null;
   try {
     const v: unknown = JSON.parse(crudo);
@@ -106,8 +110,8 @@ export function mejorSemanal(): MejorSemanal | null {
   }
 }
 
-export function guardarMejorSemanal(valor: MejorSemanal): void {
-  escribir(CLAVE_SEMANAL, JSON.stringify(valor));
+export function guardarMejorSemanal(local: string, valor: MejorSemanal): void {
+  escribir(`${CLAVE_SEMANAL}.${local}`, JSON.stringify(valor));
 }
 
 /** Mejor puntaje histórico en este navegador, para la pantalla de inicio. */

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PALETTE } from '../game/config';
 import { guardarMejorSemanal, registrarPuntaje, type Perfil } from '../game/prefs';
+import { localGuardado } from '@/data/locales';
 import { pixelFont } from '../font';
 import { Boton, FONDO_PORTADA, MensajeError, Pantalla, Titulo } from '../ui';
 
@@ -50,6 +51,8 @@ export default function GameOver({
           score,
           playerName: perfil.nombre,
           whatsapp: perfil.whatsapp || undefined,
+          // En qué local se jugó: decide en qué ranking entra el puntaje.
+          local: localGuardado(),
         }),
       });
       const datos: unknown = await res.json().catch(() => null);
@@ -68,7 +71,7 @@ export default function GameOver({
       const best = typeof r.bestScore === 'number' ? r.bestScore : score;
       setMejoro(r.improved === true);
       setMejorSemana(best);
-      guardarMejorSemanal({ playerName: perfil.nombre, score: best });
+      guardarMejorSemanal(localGuardado(), { playerName: perfil.nombre, score: best });
       registrarPuntaje(score); // récord histórico local, para la pantalla de inicio
       setEstado('listo');
     } catch {

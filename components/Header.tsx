@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useLocal } from "./LocalProvider";
 
 const navLinks = [
   { href: "/", label: "Inicio" },
@@ -14,6 +15,27 @@ const navLinks = [
 
 export default function Header() {
   const [open, setOpen] = useState(false);
+  const { local, abrirSelector } = useLocal();
+
+  /** Qué local se está mirando, con la puerta para cambiarlo. */
+  const cambiarLocal = (
+    <button
+      type="button"
+      onClick={() => {
+        setOpen(false);
+        abrirSelector();
+      }}
+      className="flex items-center gap-2 text-left"
+      title="Cambiar de local"
+    >
+      <span className="font-display text-sm tracking-wide text-white">
+        {local.ciudad.toUpperCase()}
+      </span>
+      <span className="font-body text-[11px] uppercase tracking-wider text-white/50 underline underline-offset-2 hover:text-white transition-colors">
+        Cambiar local
+      </span>
+    </button>
+  );
 
   return (
     <header className="bg-ink text-white sticky top-0 z-50">
@@ -41,6 +63,8 @@ export default function Header() {
               {link.label}
             </Link>
           ))}
+          <span className="w-px h-5 bg-white/15" aria-hidden />
+          {cambiarLocal}
         </nav>
 
         {/* Mobile hamburger */}
@@ -68,6 +92,7 @@ export default function Header() {
               {link.label}
             </Link>
           ))}
+          <div className="pt-3 mt-1 border-t border-white/10">{cambiarLocal}</div>
         </nav>
       )}
     </header>

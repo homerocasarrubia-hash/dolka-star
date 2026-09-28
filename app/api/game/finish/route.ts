@@ -13,7 +13,8 @@ import {
   MAX_SESSION_SECONDS,
   MIN_SESSION_SECONDS,
 } from '@/lib/game/server-config';
-import { validarPlayerName, validarScore, validarWhatsapp } from '@/lib/game/validation';
+import { validarLocal, validarPlayerName, validarScore, validarWhatsapp } from '@/lib/game/validation';
+import type { LocalId } from '@/data/locales';
 import { currentWeekStart } from '@/lib/game/week';
 
 export const dynamic = 'force-dynamic';
@@ -34,21 +35,26 @@ interface Resultado {
 }
 
 /**
- * Guarda el mejor puntaje de la semana para este jugador.
+ * Guarda el mejor puntaje de la semana para este jugador EN ESTE LOCAL.
  *
- * Hay una sola fila por jugador y semana, garantizada por el @@unique. La
- * comparación "solo si mejora" va dentro del WHERE del update y no en un
+ * Hay una sola fila por jugador, semana y local, garantizada por el @@unique.
+ * El local entra en la clave porque cada uno tiene su ranking: el mismo
+ * jugador puede tener su mejor de Andalgalá y su mejor de Belén en la misma
+ * semana sin que uno pise al otro.
+ *
+ * La comparación "solo si mejora" va dentro del WHERE del update y no en un
  * if previo, para que dos envíos simultáneos no se pisen: la base decide.
  */
 async function guardarMejorDeLaSemana(datos: {
   playerId: string;
   weekStart: Date;
+  local: LocalId;
   score: number;
   playerName: string;
   whatsapp: string | null;
   sessionId: string;
 }): Promise<Resultado> {
-  const { playerId, weekStart, score, playerName, whatsapp, sessionId } = datos;
+  const { playerId, weekStart, local, score, playerName, whatsapp, sessionId } = datos;
 
   // El nombre se actualiza junto con el puntaje, así el ranking muestra el
   // último que eligió. El WhatsApp solo se pisa si vino uno nuevo: mandar el
@@ -62,21 +68,21 @@ async function guardarMejorDeLaSemana(datos: {
 
   // Un solo statement: actualiza únicamente si el puntaje nuevo supera al guardado.
   const mejorado = await prisma.score.updateMany({
-    where: { playerId, weekStart, score: { lt: score } },
+    where: { playerId, weekStart, local, score: { lt: score } },
     data: cambios,
   });
   if (mejorado.count > 0) return { improved: true, bestScore: score };
 
   // No mejoró: o la fila existe y es mejor, o todavía no existe.
   const existente = await prisma.score.findUnique({
-    where: { playerId_weekStart: { playerId, weekStart } },
+    where: { playerId_weekStart_local: { playerId, weekStart, local } },
     select: { score: true },
   });
   if (existente) return { improved: false, bestScore: existente.score };
 
   try {
     await prisma.score.create({
-      data: { playerId, weekStart, score, playerName, whatsapp, sessionId },
+      data: { playerId, weekStart, local, score, playerName, whatsapp, sessionId },
       select: { id: true },
     });
     return { improved: true, bestScore: score };
@@ -86,14 +92,14 @@ async function guardarMejorDeLaSemana(datos: {
     // Carrera: otro envío del mismo jugador creó la fila entre el findUnique y
     // el create. Se rehace la comparación contra lo que quedó.
     const ganadora = await prisma.score.findUnique({
-      where: { playerId_weekStart: { playerId, weekStart } },
+      where: { playerId_weekStart_local: { playerId, weekStart, local } },
       select: { score: true },
     });
     if (!ganadora) throw error;
     if (ganadora.score >= score) return { improved: false, bestScore: ganadora.score };
 
     const reintento = await prisma.score.updateMany({
-      where: { playerId, weekStart, score: { lt: score } },
+      where: { playerId, weekStart, local, score: { lt: score } },
       data: cambios,
     });
     return reintento.count > 0
@@ -110,7 +116,7 @@ export async function POST(request: Request) {
     return malPedido('El cuerpo del pedido no es JSON válido.');
   }
 
-  const { sessionId, score, playerName, whatsapp } = (body ?? {}) as Record<string, unknown>;
+  const { sessionId, score, playerName, whatsapp, local } = (body ?? {}) as Record<string, unknown>;
 
   if (typeof sessionId !== 'string' || !sessionId) {
     return malPedido('Falta el identificador de la partida.');
@@ -155,11 +161,17 @@ export async function POST(request: Request) {
   const vWhatsapp = validarWhatsapp(whatsapp);
   if ('error' in vWhatsapp) return malPedido(vWhatsapp.error);
 
+  // 7. Local donde se jugó. Es lo único de esta lista que decide en qué ranking
+  //    entra el puntaje, así que se valida contra la lista cerrada de locales.
+  const vLocal = validarLocal(local);
+  if ('error' in vLocal) return malPedido(vLocal.error);
+
   const weekStart = currentWeekStart();
 
   const resultado = await guardarMejorDeLaSemana({
     playerId: session.playerId,
     weekStart,
+    local: vLocal.local,
     score: vScore.score,
     playerName: vNombre.nombre,
     whatsapp: vWhatsapp.whatsapp,

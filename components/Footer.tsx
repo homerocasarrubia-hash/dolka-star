@@ -1,6 +1,12 @@
+"use client";
+
 import CheckeredDivider from "./CheckeredDivider";
+import { useLocal } from "./LocalProvider";
+import { telefonoLegible, whatsappHref } from "@/data/locales";
 
 export default function Footer() {
+  const { local } = useLocal();
+
   return (
     <footer className="bg-ink text-white">
       <CheckeredDivider />
@@ -19,18 +25,21 @@ export default function Footer() {
         <div>
           <h3 className="font-display text-lg mb-3 text-red-primary">Contacto</h3>
           <ul className="text-sm text-white/70 space-y-1.5">
-            <li>Belgrano 363, Andalgalá, Catamarca</li>
+            <li>{local.direccion}</li>
             <li>Lun–Dom: 21:00 a 00:00</li>
-            <li>
-              <a
-                href="https://wa.me/543835517049"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="hover:text-white transition-colors"
-              >
-                WhatsApp: 3835 517049
-              </a>
-            </li>
+            {/* Belén todavía no tiene línea: la fila no se inventa. */}
+            {local.telefono && (
+              <li>
+                <a
+                  href={whatsappHref(local.telefono)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="hover:text-white transition-colors"
+                >
+                  WhatsApp: {telefonoLegible(local.telefono)}
+                </a>
+              </li>
+            )}
           </ul>
         </div>
 
@@ -58,8 +67,21 @@ export default function Footer() {
         </div>
       </div>
 
-      <div className="border-t border-white/10 text-center py-4 text-xs text-white/40">
-        © {new Date().getFullYear()} Dolka Star — Andalgalá, Catamarca
+      <div className="border-t border-white/10 py-4 text-center text-xs text-white/40">
+        <p>© {new Date().getFullYear()} Dolka Star — {local.ciudad}, Catamarca</p>
+        <a
+          href="https://www.costudio.business"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-2 inline-flex items-center gap-2 text-white/50 transition-colors hover:text-white/75 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/70"
+        >
+          <span>Página diseñada por C/O Studio</span>
+          <img
+            src="/assets/costudio-logo.png"
+            alt="C/O Studio"
+            className="h-[22px] w-auto opacity-60 mix-blend-screen"
+          />
+        </a>
       </div>
     </footer>
   );

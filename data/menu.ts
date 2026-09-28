@@ -1,5 +1,7 @@
 // Carta real de Dolka Star
 
+import type { Carta } from "./locales";
+
 export type Precios = {
   simple: number;
   doble?: number;
@@ -157,8 +159,8 @@ export const menu: MenuCategoria[] = [
     label: "Bebidas",
     items: [
       { nombre: "Coca-Cola / Fanta / Sprite 350ml", precio: 3500, grupo: "Gaseosas" },
-      { nombre: "Coca-Cola / Fanta / Sprite 1Lt", precio: 6000, grupo: "Gaseosas" },
-      { nombre: "Coca-Cola / Fanta / Sprite 1.5Lt", precio: 6500, grupo: "Gaseosas" },
+      { nombre: "Coca-Cola / Fanta / Sprite 1Lt", precio: 7000, grupo: "Gaseosas" },
+      { nombre: "Coca-Cola / Fanta / Sprite 1.5Lt", precio: 8000, grupo: "Gaseosas" },
       { nombre: "Pepsi / Fanta / Sprite / Coca-Cola (lata)", precio: 3500, grupo: "Gaseosas" },
       { nombre: "Agua Mineral 1/2L", precio: 2000, grupo: "Aguas" },
       { nombre: "Agua Mineral 1L", precio: 3500, grupo: "Aguas" },
@@ -170,3 +172,30 @@ export const menu: MenuCategoria[] = [
     ],
   },
 ];
+
+/**
+ * La carta que le toca a un local.
+ *
+ * Andalgalá lleva todo; Belén, solo las categorías que hace, y de Papas y
+ * Nuggets solo el pollo frito. El recorte se define en data/locales.ts: acá
+ * solo se aplica, para que agregar o sacar un plato siga siendo tocar un solo
+ * archivo.
+ */
+export function cartaDe(filtro: Carta): MenuCategoria[] {
+  if (!filtro) return menu;
+
+  return filtro.categorias
+    .map((id) => {
+      const categoria = menu.find((c) => c.id === id);
+      if (!categoria) return null;
+
+      const permitidos = filtro.soloItems?.[id];
+      if (!permitidos) return categoria;
+
+      return {
+        ...categoria,
+        items: categoria.items.filter((item) => permitidos.includes(item.nombre)),
+      };
+    })
+    .filter((c): c is MenuCategoria => c !== null && c.items.length > 0);
+}

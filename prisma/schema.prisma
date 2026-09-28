@@ -1,83 +1,55 @@
 // Schema de Dolka Star.
-//
-// OJO: los modelos GameSession y Score de acá abajo están DERIVADOS del spec de
-// las rutas, no copiados del documento original: el mensaje que los pedía llegó
-// con el marcador "[pegar acá los modelos...]" sin resolver y el repo no tenía
-// schema.prisma previo. Si el documento define otros nombres o tipos, este
-// archivo es el único lugar donde hay que reconciliarlo, más los accesos en
-// app/api/game/*.
-
-// Todas las columnas de fecha van en TIMESTAMPTZ, no en el timestamp sin zona
-// que Prisma usa por defecto. Con el tipo sin zona, el valor guardado es un
-// reloj de pared sin contexto: la app lo interpretaba bien, pero mirándolo con
-// SQL directo o en Prisma Studio aparecía corrido y no había forma de saber a
-// qué instante correspondía. Con timestamptz el valor es un instante absoluto y
-// cada herramienta lo muestra en su zona.
 
 generator client {
   provider = "prisma-client"
   output   = "../lib/generated/prisma"
 }
 
-// Prisma 7 sacó la URL del schema: la de migrate vive en prisma.config.ts y la
-// de runtime entra por el adapter de Neon en lib/prisma.ts.
 datasource db {
   provider = "postgresql"
 }
 
-/// Una partida arrancada. La crea POST /api/game/start y es la única fuente de
-/// verdad sobre cuándo empezó: el cliente nunca informa duración.
 model GameSession {
-  id        String   @id @default(cuid())
-  /// Reloj del SERVIDOR. De acá sale la duración real de la partida.
-  startedAt DateTime @default(now()) @db.Timestamptz(3)
-  /// Se completa al registrar el puntaje. Null = partida abandonada.
+  id         String    @id @default(cuid())
+  startedAt  DateTime  @default(now()) @db.Timestamptz(3)
   finishedAt DateTime? @db.Timestamptz(3)
-  /// Solo para rate limit y auditoría. NUNCA se expone en una respuesta.
-  ip        String?
-  userAgent String?
-  /// Identidad del jugador, generada en su navegador. Llega en /api/game/start
-  /// y queda pegada a la sesión: el finish la lee de acá y no del cuerpo del
-  /// pedido, así nadie puede cambiar de identidad a mitad de partida.
-  playerId  String?
+  ip         String?
+  userAgent  String?
+  playerId   String?
+  scores     Score[]
 
-  /// La sesión que produjo el mejor puntaje de la semana apunta acá. Es una
-  /// referencia de auditoría, no una relación uno a uno: la fila semanal se
-  /// actualiza desde sesiones distintas a lo largo de la semana.
-  scores Score[]
-
-  /// Sostiene el conteo de sesiones por IP en la última hora.
   @@index([ip, startedAt])
 }
 
-/// Mejor puntaje de un jugador en una semana. Es UNA fila por jugador y semana
-/// que se va actualizando: no un registro por partida.
-///
-/// El anti-reenvío ya no vive acá sino en GameSession.finishedAt, porque una
-/// misma fila la escriben varias sesiones distintas a lo largo de la semana.
 model Score {
   id         String      @id @default(cuid())
-  /// Sesión que produjo el puntaje vigente. Solo para auditoría.
   sessionId  String
   session    GameSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  /// Identidad del jugador. NUNCA sale en /api/leaderboard.
   playerId   String
   score      Int
   playerName String
-  /// Dato de contacto, opcional. NUNCA sale en /api/leaderboard.
   whatsapp   String?
-  /// Lunes 00:00 de la semana en curso, en hora de Argentina.
-  /// Lo calcula el servidor; el cliente no elige la semana.
   weekStart  DateTime    @db.Timestamptz(3)
-  /// Se marca a mano cuando el ganador de la semana valida su puntaje en el
-  /// local, antes de cobrar el premio. Nunca lo setea el cliente.
   verified   Boolean     @default(false)
+  local      String      @default("andalgala")
   createdAt  DateTime    @default(now()) @db.Timestamptz(3)
 
-  /// Un jugador, una fila por semana. Es la garantía dura contra dos filas del
-  /// mismo jugador, incluso si llegan dos envíos exactamente a la vez.
-  @@unique([playerId, weekStart])
-  /// Sostiene el top 20 semanal.
-  @@index([weekStart, score(sort: Desc)])
+  @@unique([playerId, weekStart, local])
+  @@index([local, weekStart, score(sort: Desc)])
   @@index([playerId])
+}
+
+model Pedido {
+  id         Int      @id @default(autoincrement())
+  local      String
+  cliente    String
+  telefono   String?
+  modalidad  String
+  direccion  String?
+  items      Json
+  total      Int
+  metodoPago String   @default("efectivo")
+  estado     String   @default("pendiente")
+  creadoEn   DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
