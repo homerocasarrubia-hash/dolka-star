@@ -22,17 +22,17 @@ function makePrisma() {
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const { estado } = await req.json()
     const prisma = makePrisma()
     const pedido = await prisma.pedido.update({
-      where: { id: Number(params.id) },
+      where: { id: Number(id) },
       data: { estado },
     })
 
-    // Notifica a la cocina en tiempo real (cualquier cambio de estado)
     await pusher.trigger(`cocina-${pedido.local}`, 'pedido-actualizado', pedido)
 
     return NextResponse.json(pedido)
@@ -44,12 +44,13 @@ export async function PATCH(
 
 export async function DELETE(
   _req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params
     const prisma = makePrisma()
     const pedido = await prisma.pedido.update({
-      where: { id: Number(params.id) },
+      where: { id: Number(id) },
       data: { estado: 'eliminado' },
     })
 

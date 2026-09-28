@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Pusher from 'pusher-js'
-import { categorias } from '@/data/menu'
+import { menu as categorias } from '@/data/menu'
 import type { MenuItem } from '@/data/menu'
 import PinGate from '@/components/PinGate'
 
