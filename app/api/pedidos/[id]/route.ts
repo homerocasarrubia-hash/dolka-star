@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import type { Prisma } from '@/lib/generated/prisma/client'
-import { prisma } from '@/lib/prisma'
+import { conReintento, prisma } from '@/lib/prisma'
 import { avisar } from '@/lib/pusher'
 import { rolDeLaCookie } from '@/lib/acceso'
 
@@ -95,7 +95,9 @@ export async function PATCH(
 
   let pedido
   try {
-    pedido = await prisma.pedido.update({ where: { id }, data })
+    // Dejar el pedido en el estado pedido da lo mismo una vez que dos, así que
+    // se puede reintentar si lo que falló fue la conexión.
+    pedido = await conReintento(() => prisma.pedido.update({ where: { id }, data }))
   } catch (error) {
     if (esInexistente(error)) {
       return NextResponse.json({ error: 'Ese pedido no existe.' }, { status: 404 })
@@ -121,7 +123,9 @@ export async function DELETE(
 
   let pedido
   try {
-    pedido = await prisma.pedido.update({ where: { id }, data: { estado: 'eliminado' } })
+    pedido = await conReintento(() =>
+      prisma.pedido.update({ where: { id }, data: { estado: 'eliminado' } }),
+    )
   } catch (error) {
     if (esInexistente(error)) {
       return NextResponse.json({ error: 'Ese pedido no existe.' }, { status: 404 })

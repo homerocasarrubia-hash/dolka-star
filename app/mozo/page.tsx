@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Pusher from 'pusher-js'
-import { sonar } from '@/lib/alerta'
+import { useCallback, useEffect, useState } from 'react'
+import { prepararSonido, sonar } from '@/lib/alerta'
+import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
+import { inicioDelTurnoISO } from '@/lib/turno'
 import { menu, MenuItem, MenuCategoria } from '@/data/menu'
 
 // ─────────────────────────────────────────
@@ -165,7 +166,6 @@ function beep() {
 // ─────────────────────────────────────────
 
 export default function MozoPage() {
-  const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [local, setLocal] = useState<'andalgala' | 'belen'>('andalgala')
   const [vista, setVista] = useState<'servicio' | 'delivery'>('servicio')
   const [formAbierto, setFormAbierto] = useState(false)
@@ -204,53 +204,25 @@ export default function MozoPage() {
   const [busqueda, setBusqueda] = useState('')
   const [notaRapida, setNotaRapida] = useState<{ item: MenuItem; nota: string } | null>(null)
 
-  // ── Pusher + fetch ──
-  useEffect(() => {
-    // Al cambiar de local se vacía la lista: si no, se veían los pedidos del
-    // otro local hasta que respondía el fetch nuevo.
-    setPedidos([])
-    let vigente = true
+  const [sinSonido, setSinSonido] = useState(false)
 
-    fetch(`/api/pedidos?local=${local}`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
-      .then((data: Pedido[]) => {
-        // Respuesta de un local que ya no es el elegido: se descarta.
-        if (!vigente) return
-        setPedidos(data)
-      })
-      .catch(err => console.error('[mozo] no se pudo cargar la lista de pedidos:', err))
+  // El navegador no deja sonar nada hasta que alguien toca la pantalla.
+  useEffect(() => prepararSonido(setSinSonido), [])
 
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-    })
-    const channel = pusher.subscribe(`cocina-${local}`)
-    channel.bind('nuevo-pedido', (pedido: Pedido) => {
-      setPedidos(prev =>
-        prev.some(p => p.id === pedido.id) ? prev : [pedido, ...prev]
-      )
-    })
-    channel.bind('pedido-actualizado', (pedido: Pedido) => {
-      setPedidos(prev => {
-        // Alerta sonora cuando un pedido pasa a "listo" por primera vez
-        if (pedido.estado === 'listo' && !prev.some(p => p.id === pedido.id && p.estado === 'listo')) {
-          beep()
-        }
-        const existe = prev.some(p => p.id === pedido.id)
-        if (existe) return prev.map(p => p.id === pedido.id ? { ...p, ...pedido } : p)
-        return [pedido, ...prev]
-      })
-    })
-    channel.bind('caja-cerrada', () => {
-      setPedidos([])
-    })
-    return () => {
-      vigente = false
-      channel.unbind_all()
-      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
-      // cambio de local dejaba un WebSocket abierto para siempre.
-      pusher.disconnect()
-    }
-  }, [local])
+  // Suena cuando un pedido pasa a "listo" por primera vez: es el aviso de que
+  // hay algo para levantar del mostrador.
+  const alCambiar = useCallback((pedido: Pedido, anteriores: Pedido[]) => {
+    if (pedido.estado !== 'listo') return
+    if (anteriores.find(p => p.id === pedido.id)?.estado === 'listo') return
+    beep()
+  }, [])
+
+  const { pedidos, setPedidos, conectado } = usePedidosEnVivo<Pedido>({
+    local,
+    // Sólo el turno en curso, igual que cocina y caja.
+    extra: `&desde=${encodeURIComponent(inicioDelTurnoISO())}`,
+    alCambiar,
+  })
 
   // Tick cada minuto para actualizar timers
   useEffect(() => {
@@ -619,6 +591,22 @@ export default function MozoPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {!conectado && (
+          <div role="status" className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3">
+            <span className="text-sm font-bold text-amber-200">
+              Sin conexion en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
+            </span>
+          </div>
+        )}
+
+        {sinSonido && (
+          <div role="status" className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3">
+            <span className="text-sm font-bold text-zinc-300">
+              El navegador tiene el sonido bloqueado. Toca la pantalla una vez para activarlo.
+            </span>
+          </div>
+        )}
+
         {errorAccion && (
           <div
             role="alert"

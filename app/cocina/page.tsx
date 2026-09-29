@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Pusher from 'pusher-js'
-import { sonar } from '@/lib/alerta'
+import { useCallback, useEffect, useState } from 'react'
+import { prepararSonido, sonar } from '@/lib/alerta'
+import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
+import { inicioDelTurnoISO } from '@/lib/turno'
 
 interface ItemPedido {
   nombre: string
@@ -80,59 +81,34 @@ function beep() {
 }
 
 export default function CocinaPage() {
-  const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [local, setLocal] = useState<'andalgala' | 'belen'>('andalgala')
   const [confirmandoBorrar, setConfirmandoBorrar] = useState<number | null>(null)
   const [verHistorial, setVerHistorial] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [sinSonido, setSinSonido] = useState(false)
 
-  useEffect(() => {
-    // Al cambiar de local la lista se vacía primero: si no, se veían los
-    // pedidos del otro local hasta que respondía el fetch nuevo.
-    setPedidos([])
-    let vigente = true
+  // El navegador no deja sonar nada hasta que alguien toca la pantalla.
+  useEffect(() => prepararSonido(setSinSonido), [])
 
-    // Cargamos todo lo que ya salió de pendiente (en_espera en adelante)
-    fetch(`/api/pedidos?local=${local}`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
-      .then((data: Pedido[]) => {
-        // Si mientras respondía se cambió de local, esta respuesta ya no sirve.
-        if (!vigente) return
-        setPedidos(data.filter(p => p.estado !== 'pendiente'))
-      })
-      .catch(err => console.error('[cocina] no se pudo cargar la lista de pedidos:', err))
+  // La cocina no ve los pedidos en 'pendiente': esos están en caja, esperando
+  // que los manden.
+  const filtrar = useCallback((pedido: Pedido) => pedido.estado !== 'pendiente', [])
 
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-    })
+  // Suena cuando entra una comanda nueva, no cada vez que llega un evento del
+  // mismo pedido: si caja lo edita dos veces, no son dos comandas.
+  const alCambiar = useCallback((pedido: Pedido, anteriores: Pedido[]) => {
+    if (pedido.estado !== 'en_espera') return
+    if (anteriores.find(p => p.id === pedido.id)?.estado === 'en_espera') return
+    beep()
+  }, [])
 
-    const channel = pusher.subscribe(`cocina-${local}`)
-
-    channel.bind('pedido-actualizado', (pedido: Pedido) => {
-      // 'pendiente' puro no llega a cocina; en_espera y el resto sí
-      if (pedido.estado === 'pendiente') return
-      // Beep al cocina cuando llega un pedido nuevo o editado desde caja
-      if (pedido.estado === 'en_espera') beep()
-      setPedidos(prev => {
-        const existe = prev.some(p => p.id === pedido.id)
-        if (existe) return prev.map(p => p.id === pedido.id ? pedido : p)
-        return [pedido, ...prev] // llegó por primera vez (en_espera)
-      })
-    })
-
-    channel.bind('caja-cerrada', () => {
-      setPedidos([])
-    })
-
-    return () => {
-      vigente = false
-      channel.unbind_all()
-      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
-      // cambio de local dejaba un WebSocket abierto para siempre: en una
-      // tablet que no se recarga nunca, se iban sumando toda la noche.
-      pusher.disconnect()
-    }
-  }, [local])
+  const { pedidos, setPedidos, error, setError, conectado } = usePedidosEnVivo<Pedido>({
+    local,
+    // Sólo el turno en curso. Sin esto, una comanda que quedaba sin cerrar
+    // seguía apareciendo como activa noches después.
+    extra: `&desde=${encodeURIComponent(inicioDelTurnoISO())}`,
+    filtrar,
+    alCambiar,
+  })
 
   // El cambio se pinta recién cuando el servidor confirma. Antes se pintaba
   // igual: si el PATCH fallaba, la comanda se veía "LISTO" en la tablet y en la
@@ -316,6 +292,28 @@ export default function CocinaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {!conectado && (
+          <div
+            role="status"
+            className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3"
+          >
+            <span className="text-sm font-bold text-amber-200">
+              Sin conexión en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
+            </span>
+          </div>
+        )}
+
+        {sinSonido && (
+          <div
+            role="status"
+            className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3"
+          >
+            <span className="text-sm font-bold text-zinc-300">
+              🔇 El navegador tiene el sonido bloqueado. Tocá la pantalla una vez para activarlo.
+            </span>
+          </div>
+        )}
+
         {error && (
           <div
             role="alert"

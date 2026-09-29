@@ -1,7 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import Pusher from 'pusher-js'
+import { useCallback, useEffect, useState } from 'react'
+import { prepararSonido, sonar } from '@/lib/alerta'
+import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
+import { inicioDelTurno } from '@/lib/turno'
+import { numeroDeWhatsapp, pareceCelular } from '@/lib/telefono'
 import { menu as categorias } from '@/data/menu'
 import type { MenuItem } from '@/data/menu'
 
@@ -109,9 +112,7 @@ function armarMensajeCliente(pedido: Pedido, costoEnvio: number, descuento: numb
 }
 
 function linkWhatsApp(telefono: string, mensaje: string): string {
-  const digits = telefono.replace(/\D/g, '')
-  const numero = digits.startsWith('54') ? digits : `54${digits}`
-  return `https://wa.me/${numero}?text=${encodeURIComponent(mensaje)}`
+  return `https://wa.me/${numeroDeWhatsapp(telefono)}?text=${encodeURIComponent(mensaje)}`
 }
 
 // ─────────────────────────────────────────
@@ -227,7 +228,6 @@ function exportarCSV(
 // ─────────────────────────────────────────
 
 export default function CajaPage() {
-  const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [local, setLocal] = useState<'andalgala' | 'belen'>('andalgala')
   const [verHistorial, setVerHistorial] = useState(false)
   const [mensajeEnviado, setMensajeEnviado] = useState<Record<number, boolean>>({})
@@ -250,7 +250,8 @@ export default function CajaPage() {
   const [mostrarAgregar, setMostrarAgregar]     = useState(false)
   const [guardando, setGuardando]               = useState(false)
 
-  const [error, setError] = useState<string | null>(null)
+  const [sinSonido, setSinSonido] = useState(false)
+  const [confirmandoDescartar, setConfirmandoDescartar] = useState<number | null>(null)
 
   // ── Persistir lo que sólo vive en caja, en localStorage ──
   //
@@ -294,11 +295,7 @@ export default function CajaPage() {
   useEffect(() => {
     const key = `caja_sesionInicio_${local}`
 
-    const ahora = new Date()
-    const inicioTurno = new Date(ahora)
-    inicioTurno.setHours(9, 0, 0, 0)
-    // Antes de las 9 todavía estamos en el turno que arrancó ayer.
-    if (ahora.getHours() < 9) inicioTurno.setDate(inicioTurno.getDate() - 1)
+    const inicioTurno = inicioDelTurno()
 
     try {
       const stored = localStorage.getItem(key)
@@ -318,47 +315,26 @@ export default function CajaPage() {
     }
   }, [local])
 
-  // ── Pusher + fetch de pedidos del turno ──
-  useEffect(() => {
-    if (!sesionInicio) return
-    // Se vacía primero: al cambiar de local se veían los pedidos del anterior
-    // hasta que llegaba la respuesta nueva.
-    setPedidos([])
-    let vigente = true
+  // El navegador no deja sonar nada hasta que alguien toca la pantalla.
+  useEffect(() => prepararSonido(setSinSonido), [])
 
-    fetch(`/api/pedidos?local=${local}&desde=${encodeURIComponent(sesionInicio)}`)
-      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
-      .then((data: Pedido[]) => {
-        // Respuesta de un local que ya no es el elegido: se descarta.
-        if (!vigente) return
-        setPedidos(data)
-      })
-      .catch(err => {
-        console.error('[caja] no se pudo cargar la lista de pedidos:', err)
-        if (vigente) setError('No se pudieron cargar los pedidos del turno. Recargá la página.')
-      })
+  // Suena cuando entra un pedido que caja todavía no tenía. Sobre todo son los
+  // del sitio: antes llegaban en silencio y quedaban ahí hasta que alguien
+  // miraba la pantalla.
+  const alCambiar = useCallback((pedido: Pedido, anteriores: Pedido[]) => {
+    if (anteriores.some(p => p.id === pedido.id)) return
+    sonar([660, 880], { volumen: 0.35, duracion: 0.25, separacion: 0.18 })
+  }, [])
 
-    const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
-      cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
-    })
-    const channel = pusher.subscribe(`cocina-${local}`)
-    channel.bind('nuevo-pedido', (pedido: Pedido) => {
-      setPedidos(prev => {
-        if (prev.some(p => p.id === pedido.id)) return prev
-        return [pedido, ...prev]
-      })
-    })
-    channel.bind('pedido-actualizado', (pedido: Pedido) => {
-      setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...pedido } : p))
-    })
-    return () => {
-      vigente = false
-      channel.unbind_all()
-      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
-      // cambio de local o de turno dejaba un WebSocket abierto.
-      pusher.disconnect()
-    }
-  }, [local, sesionInicio])
+  const { pedidos, setPedidos, error, setError, conectado } = usePedidosEnVivo<Pedido>({
+    local,
+    // `incluirPendientes` trae además los pedidos sin atender de turnos
+    // anteriores: son los que se perdían de vista al cambiar el turno.
+    extra: `&desde=${encodeURIComponent(sesionInicio)}&incluirPendientes=1`,
+    alCambiar,
+    // Hasta no saber cuándo arrancó el turno no hay nada que pedir.
+    activo: Boolean(sesionInicio),
+  })
 
   // ── Acciones ──
 
@@ -383,6 +359,26 @@ export default function CajaPage() {
       console.error(`[caja] no se pudo ${accion} el pedido`, id, err)
       setError(`No se pudo ${accion} el pedido #${id}. Revisá la conexión y probá de nuevo.`)
       return false
+    }
+  }
+
+  /**
+   * Da de baja un pedido que nadie va a preparar: el cliente lo abandonó, o
+   * entró mal. Hace falta porque los pedidos sin atender de turnos anteriores
+   * se siguen mostrando a propósito, y si no habría forma de sacarlos de la
+   * pantalla se irían apilando para siempre.
+   */
+  async function descartarPedido(id: number) {
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`DELETE ${res.status}`)
+      setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: 'eliminado' } : p))
+      setError(null)
+    } catch (err) {
+      console.error('[caja] no se pudo descartar el pedido', id, err)
+      setError(`No se pudo descartar el pedido #${id}. Revisá la conexión y probá de nuevo.`)
+    } finally {
+      setConfirmandoDescartar(null)
     }
   }
 
@@ -531,6 +527,11 @@ export default function CajaPage() {
     // mensaje al cliente y lo que suma el cierre de caja.
     const ajuste = ajusteDe(pedido)
 
+    // Pedido que entró antes de que arrancara este turno y sigue sin atender.
+    // Viene a propósito: antes desaparecía de la pantalla al cambiar el turno.
+    const deTurnoAnterior =
+      Boolean(sesionInicio) && new Date(pedido.creadoEn) < new Date(sesionInicio)
+
     const esDelivery = pedido.modalidad === 'llevar'
     const costoEnvioStr = costosEnvio[pedido.id] ?? ''
     const costoEnvioNum = ajuste.envio
@@ -542,6 +543,9 @@ export default function CajaPage() {
 
     const mensaje = pedido.telefono ? armarMensajeCliente(pedido, costoEnvioNum, descuentoNum) : ''
     const waLink  = pedido.telefono ? linkWhatsApp(pedido.telefono, mensaje) : null
+    // El link se ofrece igual (puede ser un fijo o un número de afuera), pero
+    // avisando: mandar a un número que no existe no da ningún error visible.
+    const telefonoRaro = Boolean(pedido.telefono) && !pareceCelular(pedido.telefono!)
     const yaMandoMensaje = mensajeEnviado[pedido.id] ?? false
 
     return (
@@ -565,13 +569,24 @@ export default function CajaPage() {
               </button>
             )}
             <span className="text-xs text-zinc-500 tabular-nums">
-              {new Date(pedido.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+              {deTurnoAnterior
+                ? new Date(pedido.creadoEn).toLocaleString('es-AR', {
+                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+                  })
+                : new Date(pedido.creadoEn).toLocaleTimeString('es-AR', {
+                    hour: '2-digit', minute: '2-digit',
+                  })}
             </span>
           </div>
         </div>
 
         {/* Badges */}
         <div className="flex gap-2 flex-wrap">
+          {deTurnoAnterior && (
+            <span className="text-[10px] font-black px-2 py-0.5 rounded tracking-widest bg-amber-500 text-black">
+              ⚠ QUEDÓ SIN ATENDER
+            </span>
+          )}
           <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-widest ${ESTADO_COLOR[pedido.estado] ?? 'bg-zinc-700 text-white'}`}>
             {ESTADO_LABEL[pedido.estado] ?? pedido.estado.toUpperCase()}
           </span>
@@ -616,6 +631,12 @@ export default function CajaPage() {
             <span className="text-xs text-zinc-500 uppercase tracking-widest font-bold">Subtotal</span>
             <span className="font-bold text-zinc-300 text-base tabular-nums">{formatearPrecio(pedido.total)}</span>
           </div>
+          {costoEnvioNum > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-zinc-400 font-bold uppercase tracking-widest">🛵 Envío</span>
+              <span className="font-bold text-zinc-300 tabular-nums">+{formatearPrecio(costoEnvioNum)}</span>
+            </div>
+          )}
           {descuentoNum > 0 && (
             <div className="flex justify-between items-center">
               <span className="text-xs text-green-400 font-bold uppercase tracking-widest">Descuento</span>
@@ -678,7 +699,39 @@ export default function CajaPage() {
               </div>
             )}
 
+            {/* ── Descartar un pedido viejo que nadie atendió ── */}
+            {deTurnoAnterior && (
+              confirmandoDescartar === pedido.id ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => descartarPedido(pedido.id)}
+                    className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white transition"
+                  >
+                    Sí, descartar
+                  </button>
+                  <button
+                    onClick={() => setConfirmandoDescartar(null)}
+                    className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmandoDescartar(pedido.id)}
+                  className="text-xs font-bold uppercase tracking-wider px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
+                >
+                  🗑️ Descartar — nadie lo atendió
+                </button>
+              )
+            )}
+
             {/* ── WhatsApp ── */}
+            {telefonoRaro && (
+              <span className="text-[10px] font-bold text-amber-500 px-1">
+                ⚠ El teléfono no parece un celular argentino: revisalo antes de mandar.
+              </span>
+            )}
             {waLink ? (
               yaMandoMensaje ? (
                 <div className="flex items-center justify-between bg-zinc-800 rounded-lg px-3 py-2.5 gap-2">
@@ -1019,6 +1072,22 @@ export default function CajaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {!conectado && (
+          <div role="status" className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3">
+            <span className="text-sm font-bold text-amber-200">
+              Sin conexión en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
+            </span>
+          </div>
+        )}
+
+        {sinSonido && (
+          <div role="status" className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3">
+            <span className="text-sm font-bold text-zinc-300">
+              🔇 El navegador tiene el sonido bloqueado. Tocá la pantalla una vez para activarlo.
+            </span>
+          </div>
+        )}
+
         {error && (
           <div
             role="alert"

@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@/lib/generated/prisma/client";
-import { prisma } from "@/lib/prisma";
+import { conReintento, prisma } from "@/lib/prisma";
 import { avisar } from "@/lib/pusher";
 import { rolDeLaCookie } from "@/lib/acceso";
 import { esLocalId, LOCAL_POR_DEFECTO } from "@/data/locales";
@@ -103,20 +103,32 @@ export async function GET(req: NextRequest) {
   // Una fecha inválida en `desde` armaba un `new Date("...")` con NaN y la
   // consulta se caía con 500. Si no se entiende, se devuelve todo el listado.
   const creadoDesde = desde ? new Date(desde) : null;
-  const filtroFecha =
-    creadoDesde && !Number.isNaN(creadoDesde.getTime())
-      ? { creadoEn: { gte: creadoDesde } }
-      : {};
+  const hayFecha = creadoDesde !== null && !Number.isNaN(creadoDesde.getTime());
+
+  // Un pedido del sitio que entró de madrugada y que nadie llegó a atender no
+  // puede desaparecer de la caja cuando cambia el turno: quedaba guardado en la
+  // base sin que nadie lo viera nunca más. Con esto, los que siguen en
+  // "pendiente" viajan igual, sean del turno que sean.
+  const incluirPendientes = req.nextUrl.searchParams.get("incluirPendientes") === "1";
+
+  const filtroFecha = !hayFecha
+    ? {}
+    : incluirPendientes
+      ? { OR: [{ creadoEn: { gte: creadoDesde! } }, { estado: "pendiente" }] }
+      : { creadoEn: { gte: creadoDesde! } };
 
   try {
-    const pedidos = await prisma.pedido.findMany({
-      where: {
-        local,
-        ...filtroFecha,
-      },
-      orderBy: { creadoEn: "desc" },
-      take: 100,
-    });
+    // Leer es idempotente: si la conexión estaba caída, se reintenta.
+    const pedidos = await conReintento(() =>
+      prisma.pedido.findMany({
+        where: {
+          local,
+          ...filtroFecha,
+        },
+        orderBy: { creadoEn: "desc" },
+        take: 100,
+      }),
+    );
 
     return NextResponse.json(pedidos);
   } catch (error) {
@@ -140,6 +152,9 @@ export async function POST(req: NextRequest) {
 
   let pedido;
   try {
+    // Sin reintento a propósito: si la primera llegó a guardarse y lo que se
+    // perdió fue la respuesta, repetirla dejaría el pedido cargado dos veces y
+    // la cocina haría el doble. Mejor que el cliente vea el error y decida.
     pedido = await prisma.pedido.create({ data: revisado.datos });
   } catch (error) {
     console.error("[pedidos] no se pudo guardar:", error);

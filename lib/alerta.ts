@@ -72,3 +72,42 @@ export function sonar(
     // Nada que hacer: el aviso visual sigue estando.
   }
 }
+
+/**
+ * Deja el audio listo y avisa si el navegador lo tiene trabado.
+ *
+ * Chrome y Safari no dejan sonar nada hasta que alguien toca la página. En una
+ * tablet de cocina eso importa: se entra con el PIN, la página recarga, y el
+ * primer pedido de la noche entraba sin hacer ruido. Acá el contexto se
+ * destraba con el primer toque —cualquiera, en cualquier parte de la pantalla—
+ * y mientras siga trabado la pantalla lo puede decir en vez de fallar callada.
+ *
+ * Devuelve la función para desengancharlo todo.
+ */
+export function prepararSonido(avisar: (bloqueado: boolean) => void): () => void {
+  const audio = contexto();
+  if (!audio) {
+    // Navegador sin Web Audio: no hay nada que destrabar ni que avisar.
+    avisar(false);
+    return () => {};
+  }
+
+  const revisar = () => avisar(audio.state === "suspended");
+  revisar();
+
+  const destrabar = () => {
+    audio.resume().then(revisar).catch(revisar);
+  };
+
+  // Los listeners quedan puestos: un contexto destrabado se puede volver a
+  // suspender solo después de un rato largo sin uso.
+  audio.addEventListener("statechange", revisar);
+  window.addEventListener("pointerdown", destrabar);
+  window.addEventListener("keydown", destrabar);
+
+  return () => {
+    audio.removeEventListener("statechange", revisar);
+    window.removeEventListener("pointerdown", destrabar);
+    window.removeEventListener("keydown", destrabar);
+  };
+}
