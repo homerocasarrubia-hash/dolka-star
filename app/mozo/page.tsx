@@ -737,7 +737,7 @@ export default function MozoPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-zinc-800 shrink-0">
               <span className="font-black text-white uppercase tracking-widest text-sm">Nuevo pedido</span>
               <button
-                onClick={cerrarForm}
+                onClick={() => cerrarForm()}
                 className="text-zinc-500 hover:text-white transition text-xl leading-none w-8 h-8 flex items-center justify-center"
               >
                 ✕
