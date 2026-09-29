@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Pusher from 'pusher-js'
-import { menu as categorias } from '@/data/menu'
+import { categorias } from '@/data/menu'
 import type { MenuItem } from '@/data/menu'
 import PinGate from '@/components/PinGate'
 
@@ -755,7 +755,7 @@ export default function CajaPage() {
                     <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
                       {categorias.map((cat, i) => (
                         <button
-                          key={cat.nombre}
+                          key={cat.label}
                           onClick={() => { setCatEdicion(i); setVarEdicion(null) }}
                           className={`shrink-0 text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg transition ${
                             catEdicion === i
@@ -763,7 +763,7 @@ export default function CajaPage() {
                               : 'bg-zinc-800 text-zinc-400 hover:text-white'
                           }`}
                         >
-                          {cat.nombre}
+                          {cat.label}
                         </button>
                       ))}
                     </div>
