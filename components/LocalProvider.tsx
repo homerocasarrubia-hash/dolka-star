@@ -10,8 +10,17 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import SelectorDeLocal from "./SelectorDeLocal";
-import { CLAVE_LOCAL, esLocalId, LOCALES, type Local, type LocalId } from "@/data/locales";
+import {
+  CLAVE_LOCAL,
+  esLocalId,
+  LOCAL_POR_DEFECTO,
+  LOCALES,
+  type Local,
+  type LocalId,
+} from "@/data/locales";
+import { esRutaInterna } from "@/lib/rutas";
 
 type Contexto = {
   local: Local;
@@ -41,6 +50,10 @@ function leerGuardado(): LocalId | null {
 }
 
 export default function LocalProvider({ children }: { children: React.ReactNode }) {
+  // /cocina, /caja y /mozo tienen su propio selector de local adentro. Antes
+  // igual quedaban atrás de esta pantalla: en una tablet nueva, la cocina no
+  // podía ver una comanda hasta que alguien eligiera un local de cliente.
+  const interna = esRutaInterna(usePathname());
   const [id, setId] = useState<LocalId | null>(null);
   const [selectorAbierto, setSelectorAbierto] = useState(false);
   // En el render del servidor no existe localStorage. Hasta leerlo no se puede
@@ -68,7 +81,7 @@ export default function LocalProvider({ children }: { children: React.ReactNode 
 
   if (!listo) return null;
 
-  if (id === null || selectorAbierto) {
+  if (!interna && (id === null || selectorAbierto)) {
     return (
       <SelectorDeLocal
         onElegir={elegir}
@@ -79,7 +92,9 @@ export default function LocalProvider({ children }: { children: React.ReactNode 
   }
 
   return (
-    <Ctx.Provider value={{ local: LOCALES[id], elegir, abrirSelector }}>
+    // En una ruta interna puede no haber local elegido: el contexto igual
+    // tiene que existir, porque `useLocal` promete devolver siempre uno.
+    <Ctx.Provider value={{ local: LOCALES[id ?? LOCAL_POR_DEFECTO], elegir, abrirSelector }}>
       {children}
     </Ctx.Provider>
   );

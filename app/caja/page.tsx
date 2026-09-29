@@ -4,7 +4,6 @@ import { useEffect, useState } from 'react'
 import Pusher from 'pusher-js'
 import { menu as categorias } from '@/data/menu'
 import type { MenuItem } from '@/data/menu'
-import PinGate from '@/components/PinGate'
 
 interface ItemPedido {
   nombre: string
@@ -64,10 +63,6 @@ function formatearPrecio(n: number) {
   return '$' + n.toLocaleString('es-AR')
 }
 
-function fmt(n: number) {
-  return '$' + n.toLocaleString('es-AR')
-}
-
 // ─────────────────────────────────────────
 // Armar mensaje de WhatsApp para el cliente
 // ─────────────────────────────────────────
@@ -96,7 +91,7 @@ function armarMensajeCliente(pedido: Pedido, costoEnvio: number, descuento: numb
     ? `\n🎁 Descuento: -${formatearPrecio(descuento)}`
     : ''
 
-  const totalFinal = Math.max(0, pedido.total + costoEnvio - descuento)
+  const totalFinal = montoCobrado(pedido, { envio: costoEnvio, descuento })
 
   let pago = `Pago: ${METODO_LABEL[pedido.metodoPago]?.texto ?? pedido.metodoPago}`
   if (pedido.metodoPago === 'transferencia') {
@@ -123,15 +118,43 @@ function linkWhatsApp(telefono: string, mensaje: string): string {
 // Exportar CSV al cerrar la caja
 // ─────────────────────────────────────────
 
-function exportarCSV(pedidos: Pedido[], local: string, sesionInicio: string) {
+/** Lo que se le cobró de más o de menos a un pedido, tal como lo cargó caja. */
+interface Ajuste {
+  envio: number
+  descuento: number
+}
+
+const SIN_AJUSTE: Ajuste = { envio: 0, descuento: 0 }
+
+/** Lo que entró por ese pedido: el total de los platos, más envío, menos descuento. */
+function montoCobrado(pedido: Pedido, ajuste: Ajuste = SIN_AJUSTE): number {
+  return Math.max(0, pedido.total + ajuste.envio - ajuste.descuento)
+}
+
+function exportarCSV(
+  pedidos: Pedido[],
+  local: string,
+  sesionInicio: string,
+  ajustes: Record<number, Ajuste>,
+) {
   const SEP = ';'
   const q = (s: string) => `"${s.replace(/"/g, '""')}"`
-  const row = (...celdas: string[]) => celdas.map(q).join(SEP)
+  const COLUMNAS = 12
+  const row = (...celdas: string[]) =>
+    [...celdas, ...Array(Math.max(0, COLUMNAS - celdas.length)).fill('')].map(q).join(SEP)
+  const vacia = () => row()
 
+  const ajusteDe = (p: Pedido) => ajustes[p.id] ?? SIN_AJUSTE
+
+  // El envío y el descuento los carga caja y van en el mensaje al cliente, así
+  // que son plata que entra o que se resigna. Antes el cierre sumaba sólo
+  // `p.total` y el arqueo nunca cerraba con lo que había en la caja.
   const cobrados = pedidos.filter(p => p.estado === 'cobrado' || p.estado === 'entregado')
-  const totalEfectivo      = cobrados.filter(p => p.metodoPago === 'efectivo').reduce((s, p) => s + p.total, 0)
-  const totalTransferencia = cobrados.filter(p => p.metodoPago === 'transferencia').reduce((s, p) => s + p.total, 0)
-  const totalTarjeta       = cobrados.filter(p => p.metodoPago === 'tarjeta').reduce((s, p) => s + p.total, 0)
+  const porMetodo = (metodo: string) =>
+    cobrados.filter(p => p.metodoPago === metodo).reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
+  const totalEfectivo      = porMetodo('efectivo')
+  const totalTransferencia = porMetodo('transferencia')
+  const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
 
   const fechaInicio = new Date(sesionInicio)
@@ -142,14 +165,15 @@ function exportarCSV(pedidos: Pedido[], local: string, sesionInicio: string) {
   const localLabel = local === 'andalgala' ? 'Andalgalá' : 'Belén'
 
   const lineas: string[] = [
-    row('DOLKA STAR', '', '', '', '', '', '', '', ''),
-    row(`Cierre de Caja — ${localLabel}`, '', '', '', '', '', '', '', ''),
-    row(fechaLabel, '', '', '', '', '', '', '', ''),
-    row('', '', '', '', '', '', '', '', ''),
-    row('#', 'Hora', 'Cliente', 'Modalidad', 'Dirección', 'Productos', 'Total', 'Método de pago', 'Estado'),
+    row('DOLKA STAR'),
+    row(`Cierre de Caja — ${localLabel}`),
+    row(fechaLabel),
+    vacia(),
+    row('#', 'Hora', 'Cliente', 'Modalidad', 'Dirección', 'Productos', 'Subtotal', 'Envío', 'Descuento', 'Total cobrado', 'Método de pago', 'Estado'),
   ]
 
   for (const p of pedidos) {
+    const ajuste = ajusteDe(p)
     const hora = new Date(p.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
     const productos = (p.items as unknown as ItemPedido[])
       .map(i => {
@@ -166,22 +190,28 @@ function exportarCSV(pedidos: Pedido[], local: string, sesionInicio: string) {
       MODALIDAD_LABEL[p.modalidad] ?? p.modalidad,
       p.direccion ?? '',
       productos,
-      fmt(p.total),
+      formatearPrecio(p.total),
+      ajuste.envio > 0 ? formatearPrecio(ajuste.envio) : '',
+      ajuste.descuento > 0 ? `-${formatearPrecio(ajuste.descuento)}` : '',
+      formatearPrecio(montoCobrado(p, ajuste)),
       METODO_LABEL[p.metodoPago]?.texto ?? p.metodoPago,
       ESTADO_LABEL[p.estado] ?? p.estado,
     ))
   }
 
-  lineas.push(row('', '', '', '', '', '', '', '', ''))
-  lineas.push(row('', '', '', '', '', '💵 Efectivo',      fmt(totalEfectivo),      '', ''))
-  lineas.push(row('', '', '', '', '', '📲 Transferencia', fmt(totalTransferencia), '', ''))
-  lineas.push(row('', '', '', '', '', '💳 Tarjeta',       fmt(totalTarjeta),       '', ''))
-  lineas.push(row('', '', '', '', '', 'TOTAL DEL DÍA',    fmt(granTotal),          '', ''))
+  const resumen = (etiqueta: string, monto: number) =>
+    row('', '', '', '', '', etiqueta, '', '', '', formatearPrecio(monto))
+
+  lineas.push(vacia())
+  lineas.push(resumen('💵 Efectivo',      totalEfectivo))
+  lineas.push(resumen('📲 Transferencia', totalTransferencia))
+  lineas.push(resumen('💳 Tarjeta',       totalTarjeta))
+  lineas.push(resumen('TOTAL DEL DÍA',    granTotal))
 
   const csvContent = lineas.join('\n')
   const filename = `caja-${local}-${dd}-${mm}-${yyyy}.csv`
 
-  const blob = new Blob(['﻿' + csvContent], { type: 'text/csv;charset=utf-8;' })
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -220,45 +250,93 @@ export default function CajaPage() {
   const [mostrarAgregar, setMostrarAgregar]     = useState(false)
   const [guardando, setGuardando]               = useState(false)
 
-  // ── Persistir "mensajeEnviado" en localStorage ──
+  const [error, setError] = useState<string | null>(null)
+
+  // ── Persistir lo que sólo vive en caja, en localStorage ──
+  //
+  // El envío y el descuento cargados a mano se perdían al recargar la página:
+  // el mensaje ya había salido con ese monto y el arqueo lo olvidaba.
+  //
+  // `hidratado` existe porque el efecto que guarda también corre en el primer
+  // render, cuando el estado todavía está vacío: sin esta guarda, pisaba con
+  // `{}` lo que acababa de leerse y lo guardado se perdía igual.
+  const [hidratado, setHidratado] = useState(false)
+
   useEffect(() => {
-    try {
-      const me = localStorage.getItem('caja_mensajeEnviado')
-      if (me) setMensajeEnviado(JSON.parse(me))
-    } catch {}
+    const leer = <T,>(clave: string, aplicar: (v: T) => void) => {
+      try {
+        const guardado = localStorage.getItem(clave)
+        if (guardado) aplicar(JSON.parse(guardado) as T)
+      } catch {}
+    }
+    leer<Record<number, boolean>>('caja_mensajeEnviado', setMensajeEnviado)
+    leer<Record<number, string>>('caja_costosEnvio', setCostosEnvio)
+    leer<Record<number, string>>('caja_descuentos', setDescuentos)
+    setHidratado(true)
   }, [])
 
   useEffect(() => {
+    if (!hidratado) return
     try { localStorage.setItem('caja_mensajeEnviado', JSON.stringify(mensajeEnviado)) } catch {}
-  }, [mensajeEnviado])
+  }, [hidratado, mensajeEnviado])
 
-  // ── sesionInicio: primera vez → 9am del turno actual ──
+  useEffect(() => {
+    if (!hidratado) return
+    try { localStorage.setItem('caja_costosEnvio', JSON.stringify(costosEnvio)) } catch {}
+  }, [hidratado, costosEnvio])
+
+  useEffect(() => {
+    if (!hidratado) return
+    try { localStorage.setItem('caja_descuentos', JSON.stringify(descuentos)) } catch {}
+  }, [hidratado, descuentos])
+
+  // ── sesionInicio: arranque del turno actual (corta a las 9am) ──
   useEffect(() => {
     const key = `caja_sesionInicio_${local}`
+
+    const ahora = new Date()
+    const inicioTurno = new Date(ahora)
+    inicioTurno.setHours(9, 0, 0, 0)
+    // Antes de las 9 todavía estamos en el turno que arrancó ayer.
+    if (ahora.getHours() < 9) inicioTurno.setDate(inicioTurno.getDate() - 1)
+
     try {
       const stored = localStorage.getItem(key)
-      if (stored) {
-        setSesionInicio(stored)
-      } else {
-        const ahora = new Date()
-        const inicio = new Date(ahora)
-        inicio.setHours(9, 0, 0, 0)
-        if (ahora.getHours() < 9) inicio.setDate(inicio.getDate() - 1)
-        const iso = inicio.toISOString()
-        localStorage.setItem(key, iso)
-        setSesionInicio(iso)
+      const guardado = stored ? new Date(stored) : null
+      // El valor guardado sólo vale si es de este turno. Antes se respetaba
+      // siempre: si una noche no se cerraba la caja, el turno seguía abierto y
+      // los totales del día se iban sumando de un día para el otro.
+      if (guardado && !Number.isNaN(guardado.getTime()) && guardado >= inicioTurno) {
+        setSesionInicio(guardado.toISOString())
+        return
       }
+      const iso = inicioTurno.toISOString()
+      localStorage.setItem(key, iso)
+      setSesionInicio(iso)
     } catch {
-      setSesionInicio(new Date().toISOString())
+      setSesionInicio(inicioTurno.toISOString())
     }
   }, [local])
 
   // ── Pusher + fetch de pedidos del turno ──
   useEffect(() => {
     if (!sesionInicio) return
+    // Se vacía primero: al cambiar de local se veían los pedidos del anterior
+    // hasta que llegaba la respuesta nueva.
+    setPedidos([])
+    let vigente = true
+
     fetch(`/api/pedidos?local=${local}&desde=${encodeURIComponent(sesionInicio)}`)
-      .then(r => r.json())
-      .then(setPedidos)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
+      .then((data: Pedido[]) => {
+        // Respuesta de un local que ya no es el elegido: se descarta.
+        if (!vigente) return
+        setPedidos(data)
+      })
+      .catch(err => {
+        console.error('[caja] no se pudo cargar la lista de pedidos:', err)
+        if (vigente) setError('No se pudieron cargar los pedidos del turno. Recargá la página.')
+      })
 
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
@@ -274,38 +352,64 @@ export default function CajaPage() {
       setPedidos(prev => prev.map(p => p.id === pedido.id ? { ...p, ...pedido } : p))
     })
     return () => {
+      vigente = false
       channel.unbind_all()
-      pusher.unsubscribe(`cocina-${local}`)
+      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
+      // cambio de local o de turno dejaba un WebSocket abierto.
+      pusher.disconnect()
     }
   }, [local, sesionInicio])
 
   // ── Acciones ──
 
-  async function marcarCobrado(id: number) {
-    await fetch(`/api/pedidos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: 'cobrado' }),
-    })
-    setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: 'cobrado' } : p))
+  /**
+   * Cambia el estado de un pedido y lo pinta recién cuando el servidor
+   * confirma. Antes se pintaba igual: un PATCH fallido dejaba la pantalla
+   * diciendo "cobrado" con el pedido sin cobrar en la base, y el arqueo del
+   * cierre salía con esa plata de más.
+   */
+  async function cambiarEstado(id: number, estado: string, accion: string) {
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado }),
+      })
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
+      setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado } : p))
+      setError(null)
+      return true
+    } catch (err) {
+      console.error(`[caja] no se pudo ${accion} el pedido`, id, err)
+      setError(`No se pudo ${accion} el pedido #${id}. Revisá la conexión y probá de nuevo.`)
+      return false
+    }
   }
 
-  async function mandarACocina(id: number) {
-    await fetch(`/api/pedidos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: 'en_espera' }),
-    })
-    setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: 'en_espera' } : p))
-  }
+  const marcarCobrado = (id: number) => cambiarEstado(id, 'cobrado', 'cobrar')
+  const mandarACocina = (id: number) => cambiarEstado(id, 'en_espera', 'mandar a cocina')
 
   async function cerrarCaja() {
-    exportarCSV(pedidos, local, sesionInicio)
-    await fetch('/api/caja/cerrar', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ local }),
-    })
+    // El CSV sale primero: es el respaldo del turno. Si algo falla después, al
+    // menos el arqueo quedó descargado.
+    exportarCSV(pedidos, local, sesionInicio, ajustesDelTurno)
+
+    try {
+      const res = await fetch('/api/caja/cerrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local }),
+      })
+      // Antes se cerraba igual: caja quedaba en cero y cocina y mozo seguían
+      // mostrando los pedidos del turno anterior, sin forma de darse cuenta.
+      if (!res.ok) throw new Error(`POST /api/caja/cerrar ${res.status}`)
+    } catch (err) {
+      console.error('[caja] no se pudo avisar el cierre a cocina y mozo:', err)
+      setError('Se descargó el CSV, pero no se pudo avisar del cierre a cocina y mozo. El turno sigue abierto: probá de nuevo.')
+      setConfirmandoCerrar(false)
+      return
+    }
+
     const ahora = new Date().toISOString()
     const key = `caja_sesionInicio_${local}`
     try { localStorage.setItem(key, ahora) } catch {}
@@ -313,6 +417,10 @@ export default function CajaPage() {
     setPedidos([])
     setCostosEnvio({})
     setDescuentos({})
+    // Los mensajes enviados son del turno que se cierra: si no se limpian, el
+    // registro se acumula en localStorage noche tras noche.
+    setMensajeEnviado({})
+    setError(null)
     setConfirmandoCerrar(false)
   }
 
@@ -357,28 +465,48 @@ export default function CajaPage() {
     const total = itemsEdicion.reduce((s, it) => s + it.precio * it.cantidad, 0)
     // Vuelve a en_espera para que cocina sepa que hubo un cambio
     const estadoNuevo = editandoPedido.estado === 'pendiente' ? 'pendiente' : 'en_espera'
-    await fetch(`/api/pedidos/${editandoPedido.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ items: itemsEdicion, total, estado: estadoNuevo }),
-    })
-    setPedidos(prev => prev.map(p =>
-      p.id === editandoPedido.id
-        ? { ...p, items: itemsEdicion as unknown as ItemPedido[], total, estado: estadoNuevo }
-        : p
-    ))
-    setGuardando(false)
-    setEditandoPedido(null)
+    try {
+      const res = await fetch(`/api/pedidos/${editandoPedido.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsEdicion, total, estado: estadoNuevo }),
+      })
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
+      // Se pinta lo que devolvió el servidor, que es lo que quedó guardado.
+      const guardado: Pedido = await res.json()
+      setPedidos(prev => prev.map(p => p.id === guardado.id ? { ...p, ...guardado } : p))
+      setError(null)
+      setEditandoPedido(null)
+    } catch (err) {
+      console.error('[caja] no se pudo guardar la edición del pedido', editandoPedido.id, err)
+      setError(`No se pudieron guardar los cambios del pedido #${editandoPedido.id}. El editor sigue abierto.`)
+    } finally {
+      setGuardando(false)
+    }
   }
 
   // ── Totales del día ──
   const activos   = pedidos.filter(p => !['cobrado', 'entregado', 'eliminado'].includes(p.estado))
   const historial = pedidos.filter(p => ['cobrado', 'entregado', 'eliminado'].includes(p.estado))
 
+  // El envío y el descuento que carga caja van en el mensaje al cliente: es
+  // plata que entra y plata que se resigna. Los totales los suman igual que el
+  // mensaje, si no el arqueo nunca cierra con lo que hay en la caja.
+  const ajusteDe = (p: Pedido): Ajuste => ({
+    envio: p.modalidad === 'llevar' ? Math.max(0, parseFloat(costosEnvio[p.id] ?? '') || 0) : 0,
+    descuento: Math.max(0, parseFloat(descuentos[p.id] ?? '') || 0),
+  })
+
+  const ajustesDelTurno: Record<number, Ajuste> = Object.fromEntries(
+    pedidos.map(p => [p.id, ajusteDe(p)]),
+  )
+
   const cobrados = pedidos.filter(p => p.estado === 'cobrado' || p.estado === 'entregado')
-  const totalEfectivo      = cobrados.filter(p => p.metodoPago === 'efectivo').reduce((s, p) => s + p.total, 0)
-  const totalTransferencia = cobrados.filter(p => p.metodoPago === 'transferencia').reduce((s, p) => s + p.total, 0)
-  const totalTarjeta       = cobrados.filter(p => p.metodoPago === 'tarjeta').reduce((s, p) => s + p.total, 0)
+  const porMetodo = (metodo: string) =>
+    cobrados.filter(p => p.metodoPago === metodo).reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
+  const totalEfectivo      = porMetodo('efectivo')
+  const totalTransferencia = porMetodo('transferencia')
+  const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
   const ticketPromedio = cobrados.length > 0 ? Math.round(granTotal / cobrados.length) : 0
 
@@ -399,14 +527,18 @@ export default function CajaPage() {
     const metodo = METODO_LABEL[pedido.metodoPago] ?? { texto: pedido.metodoPago, icono: '?', clase: 'bg-zinc-700 text-white' }
     const yaEnvioCocina = pedido.estado !== 'pendiente'
 
+    // Un solo ajuste para todo: lo que muestra la tarjeta, lo que dice el
+    // mensaje al cliente y lo que suma el cierre de caja.
+    const ajuste = ajusteDe(pedido)
+
     const esDelivery = pedido.modalidad === 'llevar'
     const costoEnvioStr = costosEnvio[pedido.id] ?? ''
-    const costoEnvioNum = parseFloat(costoEnvioStr) || 0
+    const costoEnvioNum = ajuste.envio
     const costoEnvioListo = !esDelivery || costoEnvioNum > 0
 
     const descuentoStr = descuentos[pedido.id] ?? ''
-    const descuentoNum = parseFloat(descuentoStr) || 0
-    const totalFinal = Math.max(0, pedido.total + costoEnvioNum - descuentoNum)
+    const descuentoNum = ajuste.descuento
+    const totalFinal = montoCobrado(pedido, ajuste)
 
     const mensaje = pedido.telefono ? armarMensajeCliente(pedido, costoEnvioNum, descuentoNum) : ''
     const waLink  = pedido.telefono ? linkWhatsApp(pedido.telefono, mensaje) : null
@@ -614,7 +746,6 @@ export default function CajaPage() {
   // ─────────────────────────────────────────
 
   return (
-    <PinGate role="Caja" pin="chesnodumba">
     <div className="min-h-screen bg-zinc-950 text-white">
 
       {/* ── Modal de confirmación de cierre ── */}
@@ -888,6 +1019,21 @@ export default function CajaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {error && (
+          <div
+            role="alert"
+            className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"
+          >
+            <span className="text-sm font-bold text-red-200">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-xs font-black uppercase tracking-wider text-red-300 hover:text-white transition"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {sesionInicio && (
           <p className="text-zinc-600 text-[10px] font-mono mb-4 mt-1">Sesión desde: {sesionLabel}</p>
         )}
@@ -947,6 +1093,5 @@ export default function CajaPage() {
         </div>
       </main>
     </div>
-    </PinGate>
   )
 }

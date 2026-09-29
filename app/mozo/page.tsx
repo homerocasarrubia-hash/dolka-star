@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import Pusher from 'pusher-js'
+import { sonar } from '@/lib/alerta'
 import { menu, MenuItem, MenuCategoria } from '@/data/menu'
-import PinGate from '@/components/PinGate'
 
 // ─────────────────────────────────────────
 // INTERFACES
@@ -155,33 +155,9 @@ function claseTimer(creadoEn: string): string {
 
 const ITEM_VACIO: ItemForm = { nombre: '', variante: '', cantidad: 1, precio: '', aclaracion: '' }
 
-// ─────────────────────────────────────────
-// ALERTA SONORA (Web Audio API)
-// ─────────────────────────────────────────
-
+/** Aviso de "pedido listo": dos tonos ascendentes, A5 → C#6 ("ding-dong"). */
 function beep() {
-  try {
-    const AudioCtx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-    const ctx = new AudioCtx()
-    // Dos tonos ascendentes: A5 → C#6  (suena como "ding-dong")
-    const notas = [880, 1108]
-    notas.forEach((freq, i) => {
-      const osc  = ctx.createOscillator()
-      const gain = ctx.createGain()
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      const t = ctx.currentTime + i * 0.2
-      gain.gain.setValueAtTime(0, t)
-      gain.gain.linearRampToValueAtTime(0.4, t + 0.01)
-      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22)
-      osc.start(t)
-      osc.stop(t + 0.22)
-    })
-  } catch {
-    // navegador sin soporte o política de autoplay bloqueada
-  }
+  sonar([880, 1108], { volumen: 0.4, duracion: 0.22, separacion: 0.2 })
 }
 
 // ─────────────────────────────────────────
@@ -224,14 +200,25 @@ export default function MozoPage() {
   const [enviado, setEnviado] = useState(false)
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null)
   const [marcando, setMarcando] = useState<Set<number>>(new Set())
+  const [errorAccion, setErrorAccion] = useState<string | null>(null)
   const [busqueda, setBusqueda] = useState('')
   const [notaRapida, setNotaRapida] = useState<{ item: MenuItem; nota: string } | null>(null)
 
   // ── Pusher + fetch ──
   useEffect(() => {
+    // Al cambiar de local se vacía la lista: si no, se veían los pedidos del
+    // otro local hasta que respondía el fetch nuevo.
+    setPedidos([])
+    let vigente = true
+
     fetch(`/api/pedidos?local=${local}`)
-      .then(r => r.json())
-      .then(setPedidos)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
+      .then((data: Pedido[]) => {
+        // Respuesta de un local que ya no es el elegido: se descarta.
+        if (!vigente) return
+        setPedidos(data)
+      })
+      .catch(err => console.error('[mozo] no se pudo cargar la lista de pedidos:', err))
 
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
@@ -257,8 +244,11 @@ export default function MozoPage() {
       setPedidos([])
     })
     return () => {
+      vigente = false
       channel.unbind_all()
-      pusher.unsubscribe(`cocina-${local}`)
+      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
+      // cambio de local dejaba un WebSocket abierto para siempre.
+      pusher.disconnect()
     }
   }, [local])
 
@@ -282,12 +272,19 @@ export default function MozoPage() {
     if (marcando.has(id)) return
     setMarcando(prev => new Set(prev).add(id))
     try {
-      await fetch(`/api/pedidos/${id}`, {
+      const res = await fetch(`/api/pedidos/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estado: 'entregado' }),
       })
+      // Antes se marcaba entregado aunque el PATCH fallara: el mozo veía el
+      // pedido cerrado y en cocina y caja seguía figurando sin entregar.
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
       setPedidos(prev => prev.map(p => p.id === id ? { ...p, estado: 'entregado' } : p))
+      setErrorAccion(null)
+    } catch (err) {
+      console.error('[mozo] no se pudo marcar entregado el pedido', id, err)
+      setErrorAccion(`No se pudo marcar el pedido #${id} como entregado. Probá de nuevo.`)
     } finally {
       setMarcando(prev => { const s = new Set(prev); s.delete(id); return s })
     }
@@ -344,18 +341,22 @@ export default function MozoPage() {
   function agregarDesdeCarta(item: MenuItem, variante?: { nombre: string; precio: number }, nota = '') {
     const vNombre = variante?.nombre ?? ''
     const precio  = variante?.precio ?? item.precio ?? 0
-    const idx = items.findIndex(it => it.nombre === item.nombre && it.variante === vNombre)
-    if (idx >= 0) {
-      setItems(prev => prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it))
-    } else {
-      setItems(prev => [...prev, {
+    // El índice se busca adentro del updater. Buscándolo afuera, dos toques
+    // rápidos al mismo plato leían la lista vieja (todavía sin el ítem) y
+    // cargaban dos líneas separadas de cantidad 1 en vez de una de 2.
+    setItems(prev => {
+      const idx = prev.findIndex(it => it.nombre === item.nombre && it.variante === vNombre)
+      if (idx >= 0) {
+        return prev.map((it, i) => i === idx ? { ...it, cantidad: it.cantidad + 1 } : it)
+      }
+      return [...prev, {
         nombre:     item.nombre,
         variante:   vNombre,
         cantidad:   1,
         precio:     String(precio),
         aclaracion: nota,
-      }])
-    }
+      }]
+    })
     setVariantePendiente(null)
     setNotaRapida(null)
   }
@@ -588,7 +589,6 @@ export default function MozoPage() {
   // ─────────────────────────────────────────
 
   return (
-    <PinGate role="Mozo" pin="mozo2026">
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* Header */}
       <header className="bg-black">
@@ -619,6 +619,21 @@ export default function MozoPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {errorAccion && (
+          <div
+            role="alert"
+            className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"
+          >
+            <span className="text-sm font-bold text-red-200">{errorAccion}</span>
+            <button
+              onClick={() => setErrorAccion(null)}
+              className="text-xs font-black uppercase tracking-wider text-red-300 hover:text-white transition"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+
         {/* Botón nuevo pedido */}
         <button
           onClick={() => setFormAbierto(true)}
@@ -1249,6 +1264,5 @@ export default function MozoPage() {
         </div>
       )}
     </div>
-    </PinGate>
   )
 }

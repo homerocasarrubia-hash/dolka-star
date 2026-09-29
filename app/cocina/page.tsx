@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Pusher from 'pusher-js'
-import PinGate from '@/components/PinGate'
+import { sonar } from '@/lib/alerta'
 
 interface ItemPedido {
   nombre: string
@@ -74,19 +74,9 @@ const PREVIO: Record<string, { estado: string; label: string } | null> = {
   eliminado:      { estado: 'en_espera',      label: '↩ RECUPERAR' },
 }
 
+/** Aviso de pedido nuevo: un tono seco, fuerte y corto. */
 function beep() {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)()
-    const osc = ctx.createOscillator()
-    const gain = ctx.createGain()
-    osc.connect(gain)
-    gain.connect(ctx.destination)
-    osc.frequency.value = 520
-    gain.gain.setValueAtTime(0.3, ctx.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4)
-    osc.start(ctx.currentTime)
-    osc.stop(ctx.currentTime + 0.4)
-  } catch {}
+  sonar([520], { volumen: 0.3, duracion: 0.4 })
 }
 
 export default function CocinaPage() {
@@ -94,12 +84,23 @@ export default function CocinaPage() {
   const [local, setLocal] = useState<'andalgala' | 'belen'>('andalgala')
   const [confirmandoBorrar, setConfirmandoBorrar] = useState<number | null>(null)
   const [verHistorial, setVerHistorial] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    // Al cambiar de local la lista se vacía primero: si no, se veían los
+    // pedidos del otro local hasta que respondía el fetch nuevo.
+    setPedidos([])
+    let vigente = true
+
     // Cargamos todo lo que ya salió de pendiente (en_espera en adelante)
     fetch(`/api/pedidos?local=${local}`)
-      .then(r => r.json())
-      .then((data: Pedido[]) => setPedidos(data.filter(p => p.estado !== 'pendiente')))
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/pedidos ${r.status}`)))
+      .then((data: Pedido[]) => {
+        // Si mientras respondía se cambió de local, esta respuesta ya no sirve.
+        if (!vigente) return
+        setPedidos(data.filter(p => p.estado !== 'pendiente'))
+      })
+      .catch(err => console.error('[cocina] no se pudo cargar la lista de pedidos:', err))
 
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
@@ -124,28 +125,46 @@ export default function CocinaPage() {
     })
 
     return () => {
+      vigente = false
       channel.unbind_all()
-      pusher.unsubscribe(`cocina-${local}`)
+      // `disconnect` da de baja el canal y cierra el socket. Sin esto, cada
+      // cambio de local dejaba un WebSocket abierto para siempre: en una
+      // tablet que no se recarga nunca, se iban sumando toda la noche.
+      pusher.disconnect()
     }
   }, [local])
 
+  // El cambio se pinta recién cuando el servidor confirma. Antes se pintaba
+  // igual: si el PATCH fallaba, la comanda se veía "LISTO" en la tablet y en la
+  // base seguía en preparación, y nadie se enteraba hasta recargar.
   async function cambiarEstado(id: number, estado: string) {
-    await fetch(`/api/pedidos/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado }),
-    })
-    if (estado === 'pendiente') {
-      setPedidos(prev => prev.filter(p => p.id !== id))
-    } else {
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado }),
+      })
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
       setPedidos(prev => prev.map(p => (p.id === id ? { ...p, estado } : p)))
+      setError(null)
+    } catch (err) {
+      console.error('[cocina] no se pudo cambiar el estado del pedido', id, err)
+      setError(`No se pudo actualizar el pedido #${id}. Revisá la conexión y probá de nuevo.`)
     }
   }
 
   async function borrarPedido(id: number) {
-    await fetch(`/api/pedidos/${id}`, { method: 'DELETE' })
-    setPedidos(prev => prev.map(p => (p.id === id ? { ...p, estado: 'eliminado' } : p)))
-    setConfirmandoBorrar(null)
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`DELETE ${res.status}`)
+      setPedidos(prev => prev.map(p => (p.id === id ? { ...p, estado: 'eliminado' } : p)))
+      setError(null)
+    } catch (err) {
+      console.error('[cocina] no se pudo eliminar el pedido', id, err)
+      setError(`No se pudo eliminar el pedido #${id}. Revisá la conexión y probá de nuevo.`)
+    } finally {
+      setConfirmandoBorrar(null)
+    }
   }
 
   const activos  = pedidos.filter(p => p.estado !== 'entregado' && p.estado !== 'eliminado')
@@ -267,7 +286,6 @@ export default function CocinaPage() {
   }
 
   return (
-    <PinGate role="Cocina" pin="cocina2026">
     <div className="min-h-screen bg-zinc-950 text-white">
       {/* Header */}
       <header className="bg-black">
@@ -298,6 +316,21 @@ export default function CocinaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
+        {error && (
+          <div
+            role="alert"
+            className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"
+          >
+            <span className="text-sm font-bold text-red-200">{error}</span>
+            <button
+              onClick={() => setError(null)}
+              className="text-xs font-black uppercase tracking-wider text-red-300 hover:text-white transition"
+            >
+              Cerrar
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-3 mb-5 mt-2">
           <span className="text-xs font-black uppercase tracking-widest text-zinc-500">
             Pedidos activos
@@ -343,6 +376,5 @@ export default function CocinaPage() {
         </div>
       </main>
     </div>
-    </PinGate>
   )
 }
