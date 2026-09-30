@@ -8,6 +8,7 @@ import type { Prisma } from "@/lib/generated/prisma/client";
 import { conReintento, prisma } from "@/lib/prisma";
 import { avisar } from "@/lib/pusher";
 import { rolDeLaCookie } from "@/lib/acceso";
+import { AVISO_CERRADO, estaAbierto } from "@/lib/horario";
 import { esLocalId, LOCAL_POR_DEFECTO } from "@/data/locales";
 
 /** Las tres formas de entrega que manejan el sitio y la app del mozo. */
@@ -140,6 +141,14 @@ export async function GET(req: NextRequest) {
 // Sin cookie a propósito: acá entran los pedidos del carrito del sitio, que
 // los hace gente que no tiene por qué estar logueada en nada.
 export async function POST(req: NextRequest) {
+  // El horario se resuelve acá y no sólo en el navegador: el reloj del visitante
+  // puede estar mal, o la página puede haber quedado abierta desde ayer. Los del
+  // local entran igual —el mozo carga pedidos cuando haga falta—, esto es sólo
+  // para los del sitio.
+  if (!estaAbierto() && !(await rolDeLaCookie(req))) {
+    return NextResponse.json({ error: AVISO_CERRADO }, { status: 409 });
+  }
+
   let body: unknown;
   try {
     body = await req.json();

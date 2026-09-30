@@ -62,6 +62,24 @@ const ESTADO_COLOR: Record<string, string> = {
   eliminado:      'bg-zinc-800 text-zinc-400',
 }
 
+/**
+ * La hora a la que entró el pedido, en 24 horas.
+ *
+ * En 24 horas y no en "11:49 p. m." porque en una caja que trabaja de noche
+ * "23:49" se lee de un vistazo y no se confunde con la mañana. Cuando el pedido
+ * es de otro día se antepone la fecha, que si no un pedido que quedó colgado de
+ * anoche parece de recién.
+ */
+function horaDelPedido(creadoEn: string, conFecha = false): string {
+  const cuando = new Date(creadoEn)
+  const hora = cuando.toLocaleTimeString('es-AR', {
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  if (!conFecha) return hora
+  const fecha = cuando.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })
+  return `${fecha} · ${hora}`
+}
+
 function formatearPrecio(n: number) {
   return '$' + n.toLocaleString('es-AR')
 }
@@ -175,7 +193,7 @@ function exportarCSV(
 
   for (const p of pedidos) {
     const ajuste = ajusteDe(p)
-    const hora = new Date(p.creadoEn).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+    const hora = horaDelPedido(p.creadoEn)
     const productos = (p.items as unknown as ItemPedido[])
       .map(i => {
         let s = `${i.cantidad}× ${i.nombre}`
@@ -555,9 +573,15 @@ export default function CajaPage() {
       >
         {/* Encabezado */}
         <div className="flex justify-between items-start gap-2">
-          <div className="flex items-baseline gap-2 min-w-0">
-            <span className="text-red-500 font-black text-xl leading-none shrink-0">#{pedido.id}</span>
-            <span className="font-bold text-white uppercase tracking-wide text-sm truncate">{pedido.cliente}</span>
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="text-red-500 font-black text-xl leading-none shrink-0">#{pedido.id}</span>
+              <span className="font-bold text-white uppercase tracking-wide text-sm truncate">{pedido.cliente}</span>
+            </div>
+            <span className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-zinc-300">
+              <span className="text-xs leading-none">🕐</span>
+              {horaDelPedido(pedido.creadoEn, deTurnoAnterior)}
+            </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             {!enHistorial && (
@@ -568,15 +592,6 @@ export default function CajaPage() {
                 ✏️ Editar
               </button>
             )}
-            <span className="text-xs text-zinc-500 tabular-nums">
-              {deTurnoAnterior
-                ? new Date(pedido.creadoEn).toLocaleString('es-AR', {
-                    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
-                  })
-                : new Date(pedido.creadoEn).toLocaleTimeString('es-AR', {
-                    hour: '2-digit', minute: '2-digit',
-                  })}
-            </span>
           </div>
         </div>
 

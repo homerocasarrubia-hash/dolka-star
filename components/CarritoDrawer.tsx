@@ -10,6 +10,7 @@ import {
   totalDe,
   type Linea,
 } from "@/lib/pedido";
+import { AVISO_CERRADO, estaAbierto } from "@/lib/horario";
 
 type Modalidad = "local" | "llevar" | "retirar";
 type MetodoPago = "efectivo" | "transferencia" | "tarjeta";
@@ -38,6 +39,21 @@ export default function CarritoDrawer({
   const [modalidad, setModalidad] = useState<Modalidad>("local");
   const [direccion, setDireccion] = useState("");
   const [metodoPago, setMetodoPago] = useState<MetodoPago>("efectivo");
+  const [error, setError] = useState<string | null>(null);
+
+  // Arranca en true para que el servidor y el navegador pinten lo mismo; el
+  // efecto de abajo lo corrige apenas monta.
+  const [tomandoPedidos, setTomandoPedidos] = useState(true);
+
+  // Se vuelve a mirar cada tanto: alguien puede tener el carrito abierto a las
+  // 19:58 y terminar de cargarlo pasadas las 20, y sería raro que le siga
+  // diciendo que está cerrado.
+  useEffect(() => {
+    const revisar = () => setTomandoPedidos(estaAbierto());
+    revisar();
+    const reloj = setInterval(revisar, 30_000);
+    return () => clearInterval(reloj);
+  }, []);
 
   useEffect(() => {
     if (!abierto) return;
@@ -58,9 +74,11 @@ export default function CarritoDrawer({
   const nombreOk = cliente.trim().length >= 2;
   const telefonoOk = telefono.trim().replace(/\D/g, "").length >= 8;
   const direccionOk = modalidad !== "llevar" || direccion.trim().length >= 5;
-  const puedeEnviar = lineas.length > 0 && nombreOk && telefonoOk && direccionOk;
+  const puedeEnviar =
+    tomandoPedidos && lineas.length > 0 && nombreOk && telefonoOk && direccionOk;
 
   function cerrarYReset() {
+    setError(null);
     setPedidoEnviado(false);
     setEnCheckout(false);
     setCliente("");
@@ -74,6 +92,7 @@ export default function CarritoDrawer({
   async function enviar() {
     if (!puedeEnviar || enviando) return;
     setEnviando(true);
+    setError(null);
     try {
       const res = await fetch("/api/pedidos", {
         method: "POST",
@@ -98,7 +117,14 @@ export default function CarritoDrawer({
       if (res.ok) {
         onVaciar();
         setPedidoEnviado(true);
+        return;
       }
+      // Antes un pedido que fallaba no decía nada: el botón volvía a la normalidad
+      // y el cliente se quedaba esperando una hamburguesa que nadie recibió.
+      const cuerpo = await res.json().catch(() => null);
+      setError(cuerpo?.error ?? "No pudimos tomar el pedido. Probá de nuevo en un momento.");
+    } catch {
+      setError("No pudimos conectarnos. Fijate que tengas internet y probá de nuevo.");
     } finally {
       setEnviando(false);
     }
@@ -342,13 +368,29 @@ export default function CarritoDrawer({
               </span>
             </div>
 
+            {!tomandoPedidos && (
+              <p className="mb-3 rounded border border-red-primary bg-red-primary/10 px-4 py-3 text-center text-sm font-semibold text-red-primary">
+                🌙 {AVISO_CERRADO}
+              </p>
+            )}
+
+            {error && (
+              <p
+                role="alert"
+                className="mb-3 rounded border border-red-primary bg-red-primary/10 px-4 py-3 text-center text-sm font-semibold text-red-primary"
+              >
+                {error}
+              </p>
+            )}
+
             {!enCheckout ? (
               <button
                 type="button"
                 onClick={() => setEnCheckout(true)}
-                className="w-full rounded bg-red-primary px-6 py-3 font-display text-lg text-white transition-colors hover:bg-red-logo"
+                disabled={!tomandoPedidos}
+                className="w-full rounded bg-red-primary px-6 py-3 font-display text-lg text-white transition-colors hover:bg-red-logo disabled:cursor-not-allowed disabled:opacity-40"
               >
-                HACER PEDIDO
+                {tomandoPedidos ? "HACER PEDIDO" : `CERRADO — ABRIMOS 20:00`}
               </button>
             ) : (
               <div className="space-y-2">
@@ -358,7 +400,11 @@ export default function CarritoDrawer({
                   disabled={!puedeEnviar || enviando}
                   className="w-full rounded bg-red-primary px-6 py-3 font-display text-lg text-white transition-colors hover:bg-red-logo disabled:opacity-40"
                 >
-                  {enviando ? "ENVIANDO..." : "CONFIRMAR PEDIDO"}
+                  {enviando
+                    ? "ENVIANDO..."
+                    : tomandoPedidos
+                      ? "CONFIRMAR PEDIDO"
+                      : "CERRADO — ABRIMOS 20:00"}
                 </button>
                 <button
                   type="button"
