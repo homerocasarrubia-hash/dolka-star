@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { prepararSonido, sonar } from '@/lib/alerta'
+import { activarSonido, prepararSonido, sonar } from '@/lib/alerta'
+import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurnoISO } from '@/lib/turno'
 import { menu, MenuItem, MenuCategoria } from '@/data/menu'
@@ -30,6 +31,7 @@ interface Pedido {
   estado: string
   creadoEn: string
   local: string
+  numero?: number | null
 }
 
 interface ItemForm {
@@ -137,6 +139,17 @@ const LEFT_BORDER: Record<string, string> = {
   eliminado:      'border-l-4 border-zinc-700',
 }
 
+
+/**
+ * Lo que se canta en el local. Arranca en 1 cada turno.
+ *
+ * Los pedidos anteriores a esta función no tienen número guardado: para esos
+ * se muestra el id, que es lo que se venía usando.
+ */
+function numeroDeComanda(pedido: { numero?: number | null; id: number }): string {
+  return `#${pedido.numero ?? pedido.id}`
+}
+
 function formatearPrecio(n: number) {
   return '$' + n.toLocaleString('es-AR')
 }
@@ -176,7 +189,7 @@ export default function MozoPage() {
   const [telefono, setTelefono] = useState('')
   const [modalidad, setModalidad] = useState<'local' | 'retirar' | 'llevar'>('local')
   const [direccion, setDireccion] = useState('')
-  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'tarjeta'>('efectivo')
+  const [metodoPago, setMetodoPago] = useState<'efectivo' | 'transferencia' | 'tarjeta' | 'arreglo'>('efectivo')
 
   // ── Form: items ──
   const [items, setItems] = useState<ItemForm[]>([])
@@ -204,10 +217,22 @@ export default function MozoPage() {
   const [busqueda, setBusqueda] = useState('')
   const [notaRapida, setNotaRapida] = useState<{ item: MenuItem; nota: string } | null>(null)
 
-  const [sinSonido, setSinSonido] = useState(false)
+  const [sonidoBloqueado, setSonidoBloqueado] = useState(false)
+  // Se enciende sólo cuando alguien apretó el botón y el tono de prueba sonó.
+  // No alcanza con preguntarle al navegador si el audio está "andando": en la
+  // tablet del local decía que sí y las comandas entraban mudas igual. Hasta que
+  // no se escuche el tono de confirmación, el botón sigue a la vista.
+  const [sonidoConfirmado, setSonidoConfirmado] = useState(false)
 
-  // El navegador no deja sonar nada hasta que alguien toca la pantalla.
-  useEffect(() => prepararSonido(setSinSonido), [])
+  // Además se destraba solo con el primer toque en cualquier parte, por si
+  // nadie aprieta el botón.
+  useEffect(() => prepararSonido(setSonidoBloqueado), [])
+
+  async function encenderSonido() {
+    const anduvo = await activarSonido()
+    setSonidoConfirmado(anduvo)
+    setSonidoBloqueado(!anduvo)
+  }
 
   // Suena cuando un pedido pasa a "listo" por primera vez: es el aviso de que
   // hay algo para levantar del mostrador.
@@ -217,7 +242,7 @@ export default function MozoPage() {
     beep()
   }, [])
 
-  const { pedidos, setPedidos, conectado } = usePedidosEnVivo<Pedido>({
+  const { pedidos, setPedidos, conectado, ultimaCarga, refrescar } = usePedidosEnVivo<Pedido>({
     local,
     // Sólo el turno en curso, igual que cocina y caja.
     extra: `&desde=${encodeURIComponent(inicioDelTurnoISO())}`,
@@ -446,7 +471,7 @@ export default function MozoPage() {
     >
       <div className="flex justify-between items-start">
         <div className="flex items-baseline gap-2">
-          <span className="text-red-500 font-black text-xl leading-none">#{pedido.id}</span>
+          <span className="text-red-500 font-black text-xl leading-none">{numeroDeComanda(pedido)}</span>
           <span className="font-bold text-white uppercase tracking-wide text-sm">{pedido.cliente}</span>
         </div>
         <span className={`text-xs tabular-nums ${claseTimer(pedido.creadoEn)}`}>
@@ -498,7 +523,7 @@ export default function MozoPage() {
     >
       <div className="flex justify-between items-start">
         <div className="flex items-baseline gap-2">
-          <span className="text-red-500 font-black text-xl leading-none">#{pedido.id}</span>
+          <span className="text-red-500 font-black text-xl leading-none">{numeroDeComanda(pedido)}</span>
           <span className="font-bold text-white uppercase tracking-wide text-sm">{pedido.cliente}</span>
         </div>
         <span className={`text-xs tabular-nums ${claseTimer(pedido.creadoEn)}`}>
@@ -591,23 +616,15 @@ export default function MozoPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
-        {!conectado && (
-          <div role="status" className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3">
-            <span className="text-sm font-bold text-amber-200">
-              Sin conexion en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
-            </span>
-          </div>
-        )}
+        <BarraDePantalla
+          conectado={conectado}
+          ultimaCarga={ultimaCarga}
+          onRefrescar={refrescar}
+          sinSonido={!sonidoConfirmado || sonidoBloqueado}
+          onActivarSonido={encenderSonido}
+        />
 
-        {sinSonido && (
-          <div role="status" className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3">
-            <span className="text-sm font-bold text-zinc-300">
-              El navegador tiene el sonido bloqueado. Toca la pantalla una vez para activarlo.
-            </span>
-          </div>
-        )}
-
-        {errorAccion && (
+                {errorAccion && (
           <div
             role="alert"
             className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"
@@ -834,18 +851,21 @@ export default function MozoPage() {
                     <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1.5 block">
                       Método de pago *
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {([
                         { val: 'efectivo',      label: '💵 Efect.' },
                         { val: 'transferencia', label: '📲 Transf.' },
                         { val: 'tarjeta',       label: '💳 Tarjeta' },
+                        // Sale de la cocina igual, pero no entra plata: no suma
+                        // en el arqueo ni hay que marcarlo como cobrado.
+                        { val: 'arreglo',       label: '🤝 Arreglo' },
                       ] as const).map(({ val, label }) => (
                         <button
                           key={val}
                           onClick={() => setMetodoPago(val)}
                           className={`py-2.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
                             metodoPago === val
-                              ? 'bg-red-700 text-white'
+                              ? val === 'arreglo' ? 'bg-amber-600 text-black' : 'bg-red-700 text-white'
                               : 'bg-zinc-800 text-zinc-400 hover:text-white'
                           }`}
                         >

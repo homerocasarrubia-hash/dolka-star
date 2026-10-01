@@ -9,6 +9,13 @@ import { conReintento, prisma } from '@/lib/prisma'
 import { avisar } from '@/lib/pusher'
 import { rolDeLaCookie } from '@/lib/acceso'
 
+/**
+ * Las formas de pago. "arreglo" es la que no entra en la caja: comida de la
+ * casa, un canje, lo que sea que salió sin que entrara plata. Se guarda igual
+ * para saber cuánto se regaló, pero no suma en el arqueo.
+ */
+const METODOS_DE_PAGO = new Set(['efectivo', 'transferencia', 'tarjeta', 'arreglo'])
+
 /** Los estados por los que puede pasar un pedido. Cualquier otro se rechaza. */
 const ESTADOS = new Set([
   'pendiente',
@@ -70,6 +77,13 @@ export async function PATCH(
       return malPedido('El estado del pedido no es válido.')
     }
     data.estado = b.estado
+  }
+
+  if (b.metodoPago !== undefined) {
+    if (typeof b.metodoPago !== 'string' || !METODOS_DE_PAGO.has(b.metodoPago)) {
+      return malPedido('La forma de pago no es válida.')
+    }
+    data.metodoPago = b.metodoPago
   }
 
   if (b.items !== undefined) {

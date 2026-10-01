@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { prepararSonido, sonar } from '@/lib/alerta'
+import { activarSonido, avisoDeComanda, prepararSonido } from '@/lib/alerta'
+import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurnoISO } from '@/lib/turno'
 
@@ -23,6 +24,7 @@ interface Pedido {
   estado: string
   creadoEn: string
   local: string
+  numero?: number | null
 }
 
 const ESTADO_LABEL: Record<string, string> = {
@@ -75,19 +77,40 @@ const PREVIO: Record<string, { estado: string; label: string } | null> = {
   eliminado:      { estado: 'en_espera',      label: '↩ RECUPERAR' },
 }
 
-/** Aviso de pedido nuevo: un tono seco, fuerte y corto. */
-function beep() {
-  sonar([520], { volumen: 0.3, duracion: 0.4 })
+
+/**
+ * Lo que se canta en el local. Arranca en 1 cada turno.
+ *
+ * Los pedidos anteriores a esta función no tienen número guardado: para esos
+ * se muestra el id, que es lo que se venía usando.
+ */
+function numeroDeComanda(pedido: { numero?: number | null; id: number }): string {
+  return `#${pedido.numero ?? pedido.id}`
 }
+
+/** Aviso de comanda nueva: tres pulsos, para que se imponga sobre la cocina. */
+const beep = avisoDeComanda
 
 export default function CocinaPage() {
   const [local, setLocal] = useState<'andalgala' | 'belen'>('andalgala')
   const [confirmandoBorrar, setConfirmandoBorrar] = useState<number | null>(null)
   const [verHistorial, setVerHistorial] = useState(false)
-  const [sinSonido, setSinSonido] = useState(false)
+  const [sonidoBloqueado, setSonidoBloqueado] = useState(false)
+  // Se enciende sólo cuando alguien apretó el botón y el tono de prueba sonó.
+  // No alcanza con preguntarle al navegador si el audio está "andando": en la
+  // tablet del local decía que sí y las comandas entraban mudas igual. Hasta que
+  // no se escuche el tono de confirmación, el botón sigue a la vista.
+  const [sonidoConfirmado, setSonidoConfirmado] = useState(false)
 
-  // El navegador no deja sonar nada hasta que alguien toca la pantalla.
-  useEffect(() => prepararSonido(setSinSonido), [])
+  // Además se destraba solo con el primer toque en cualquier parte, por si
+  // nadie aprieta el botón.
+  useEffect(() => prepararSonido(setSonidoBloqueado), [])
+
+  async function encenderSonido() {
+    const anduvo = await activarSonido()
+    setSonidoConfirmado(anduvo)
+    setSonidoBloqueado(!anduvo)
+  }
 
   // La cocina no ve los pedidos en 'pendiente': esos están en caja, esperando
   // que los manden.
@@ -101,7 +124,7 @@ export default function CocinaPage() {
     beep()
   }, [])
 
-  const { pedidos, setPedidos, error, setError, conectado } = usePedidosEnVivo<Pedido>({
+  const { pedidos, setPedidos, error, setError, conectado, ultimaCarga, refrescar } = usePedidosEnVivo<Pedido>({
     local,
     // Sólo el turno en curso. Sin esto, una comanda que quedaba sin cerrar
     // seguía apareciendo como activa noches después.
@@ -157,7 +180,7 @@ export default function CocinaPage() {
         {/* Encabezado */}
         <div className="flex justify-between items-start">
           <div className="flex items-baseline gap-2">
-            <span className="text-red-500 font-black text-xl leading-none">#{pedido.id}</span>
+            <span className="text-red-500 font-black text-xl leading-none">{numeroDeComanda(pedido)}</span>
             <span className="font-bold text-white uppercase tracking-wide text-sm">{pedido.cliente}</span>
           </div>
           <span className="text-xs text-zinc-500 tabular-nums">
@@ -292,29 +315,15 @@ export default function CocinaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
-        {!conectado && (
-          <div
-            role="status"
-            className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3"
-          >
-            <span className="text-sm font-bold text-amber-200">
-              Sin conexión en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
-            </span>
-          </div>
-        )}
+        <BarraDePantalla
+          conectado={conectado}
+          ultimaCarga={ultimaCarga}
+          onRefrescar={refrescar}
+          sinSonido={!sonidoConfirmado || sonidoBloqueado}
+          onActivarSonido={encenderSonido}
+        />
 
-        {sinSonido && (
-          <div
-            role="status"
-            className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3"
-          >
-            <span className="text-sm font-bold text-zinc-300">
-              🔇 El navegador tiene el sonido bloqueado. Tocá la pantalla una vez para activarlo.
-            </span>
-          </div>
-        )}
-
-        {error && (
+                {error && (
           <div
             role="alert"
             className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"

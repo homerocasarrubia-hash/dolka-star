@@ -10,6 +10,7 @@
 // pedido se perdía.
 
 import Pusher from "pusher";
+import { canalDelLocal } from "./canal";
 
 let pusher: Pusher | null = null;
 let avisado = false;
@@ -48,7 +49,7 @@ export async function avisar(
   datos: unknown,
 ): Promise<void> {
   try {
-    await notificador()?.trigger(`cocina-${local}`, evento, datos);
+    await notificador()?.trigger(canalDelLocal(local), evento, datos);
   } catch (error) {
     console.error(`[pusher] no se pudo avisar "${evento}" a ${local}:`, error);
   }

@@ -92,7 +92,7 @@ export function prepararSonido(avisar: (bloqueado: boolean) => void): () => void
     return () => {};
   }
 
-  const revisar = () => avisar(audio.state === "suspended");
+  const revisar = () => avisar(audio.state !== "running");
   revisar();
 
   const destrabar = () => {
@@ -110,4 +110,45 @@ export function prepararSonido(avisar: (bloqueado: boolean) => void): () => void
     window.removeEventListener("pointerdown", destrabar);
     window.removeEventListener("keydown", destrabar);
   };
+}
+
+/**
+ * Enciende el sonido, a pedido de la persona.
+ *
+ * Esto existe porque en el local pasó lo esperable: nadie tocaba la pantalla
+ * después de entrar con el PIN, el navegador mantenía el audio bloqueado y las
+ * comandas entraban mudas. Un cartel pidiendo "tocá la pantalla" es fácil de
+ * ignorar; un botón que suena cuando lo apretás no deja dudas de si quedó
+ * andando.
+ *
+ * Tiene que llamarse desde el click, no después de un await: el permiso del
+ * navegador vale para el gesto que lo disparó.
+ */
+export async function activarSonido(): Promise<boolean> {
+  const audio = contexto();
+  if (!audio) return false;
+  try {
+    await audio.resume();
+  } catch {
+    return false;
+  }
+  if (audio.state !== "running") return false;
+  // Un tono corto de confirmación: si se escucha, está listo de verdad.
+  sonar([880], { volumen: 0.3, duracion: 0.18 });
+  return true;
+}
+
+/** ¿El navegador está dejando sonar? */
+export function sonidoAndando(): boolean {
+  return contexto()?.state === "running";
+}
+
+/**
+ * El aviso de comanda nueva en la cocina: tres pulsos, no uno.
+ *
+ * Un pitido corto y solo se pierde entre la plancha y la música. Repetido se
+ * impone, y si alguien está de espaldas igual lo escucha.
+ */
+export function avisoDeComanda(): void {
+  sonar([880, 880, 880], { volumen: 0.6, duracion: 0.22, separacion: 0.32 });
 }

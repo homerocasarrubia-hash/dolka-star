@@ -1,7 +1,8 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { prepararSonido, sonar } from '@/lib/alerta'
+import { activarSonido, prepararSonido, sonar } from '@/lib/alerta'
+import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurno } from '@/lib/turno'
 import { numeroDeWhatsapp, pareceCelular } from '@/lib/telefono'
@@ -28,13 +29,18 @@ interface Pedido {
   estado: string
   creadoEn: string
   local: string
+  numero?: number | null
 }
 
 const METODO_LABEL: Record<string, { texto: string; icono: string; clase: string }> = {
   efectivo:      { texto: 'Efectivo',      icono: '💵', clase: 'bg-emerald-700 text-white' },
   transferencia: { texto: 'Transferencia', icono: '📲', clase: 'bg-blue-700 text-white' },
   tarjeta:       { texto: 'Tarjeta',       icono: '💳', clase: 'bg-violet-700 text-white' },
+  arreglo:       { texto: 'Arreglo',       icono: '🤝', clase: 'bg-amber-600 text-black' },
 }
+
+/** El pedido salió sin que entrara plata: no va al arqueo. */
+const ARREGLO = 'arreglo'
 
 const MODALIDAD_LABEL: Record<string, string> = {
   local:   'En el local',
@@ -70,6 +76,17 @@ const ESTADO_COLOR: Record<string, string> = {
  * es de otro día se antepone la fecha, que si no un pedido que quedó colgado de
  * anoche parece de recién.
  */
+
+/**
+ * Lo que se canta en el local. Arranca en 1 cada turno.
+ *
+ * Los pedidos anteriores a esta función no tienen número guardado: para esos
+ * se muestra el id, que es lo que se venía usando.
+ */
+function numeroDeComanda(pedido: { numero?: number | null; id: number }): string {
+  return `#${pedido.numero ?? pedido.id}`
+}
+
 function horaDelPedido(creadoEn: string, conFecha = false): string {
   const cuando = new Date(creadoEn)
   const hora = cuando.toLocaleTimeString('es-AR', {
@@ -175,6 +192,9 @@ function exportarCSV(
   const totalTransferencia = porMetodo('transferencia')
   const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
+  // Los arreglos se informan, pero afuera del total: no es plata que esté en
+  // la caja, y sumarla haría que el arqueo nunca cierre.
+  const totalArreglos = porMetodo(ARREGLO)
 
   const fechaInicio = new Date(sesionInicio)
   const dd   = String(fechaInicio.getDate()).padStart(2, '0')
@@ -188,7 +208,7 @@ function exportarCSV(
     row(`Cierre de Caja — ${localLabel}`),
     row(fechaLabel),
     vacia(),
-    row('#', 'Hora', 'Cliente', 'Modalidad', 'Dirección', 'Productos', 'Subtotal', 'Envío', 'Descuento', 'Total cobrado', 'Método de pago', 'Estado'),
+    row('Comanda', 'Hora', 'Cliente', 'Modalidad', 'Dirección', 'Productos', 'Subtotal', 'Envío', 'Descuento', 'Total cobrado', 'Método de pago', 'Estado'),
   ]
 
   for (const p of pedidos) {
@@ -203,7 +223,7 @@ function exportarCSV(
       })
       .join(' / ')
     lineas.push(row(
-      String(p.id),
+      numeroDeComanda(p),
       hora,
       p.cliente,
       MODALIDAD_LABEL[p.modalidad] ?? p.modalidad,
@@ -212,7 +232,9 @@ function exportarCSV(
       formatearPrecio(p.total),
       ajuste.envio > 0 ? formatearPrecio(ajuste.envio) : '',
       ajuste.descuento > 0 ? `-${formatearPrecio(ajuste.descuento)}` : '',
-      formatearPrecio(montoCobrado(p, ajuste)),
+      // En un arreglo no entró plata: la columna de cobrado va vacía y el
+      // monto queda a la vista sólo en el subtotal.
+      p.metodoPago === ARREGLO ? '' : formatearPrecio(montoCobrado(p, ajuste)),
       METODO_LABEL[p.metodoPago]?.texto ?? p.metodoPago,
       ESTADO_LABEL[p.estado] ?? p.estado,
     ))
@@ -226,6 +248,10 @@ function exportarCSV(
   lineas.push(resumen('📲 Transferencia', totalTransferencia))
   lineas.push(resumen('💳 Tarjeta',       totalTarjeta))
   lineas.push(resumen('TOTAL DEL DÍA',    granTotal))
+  if (totalArreglos > 0) {
+    lineas.push(vacia())
+    lineas.push(resumen('🤝 Arreglos (no entró plata)', totalArreglos))
+  }
 
   const csvContent = lineas.join('\n')
   const filename = `caja-${local}-${dd}-${mm}-${yyyy}.csv`
@@ -268,8 +294,13 @@ export default function CajaPage() {
   const [mostrarAgregar, setMostrarAgregar]     = useState(false)
   const [guardando, setGuardando]               = useState(false)
 
-  const [sinSonido, setSinSonido] = useState(false)
+  const [sonidoBloqueado, setSonidoBloqueado] = useState(false)
+  // Se enciende sólo cuando alguien apretó el botón y el tono de prueba sonó.
+  // No alcanza con preguntarle al navegador si el audio está "andando": en la
+  // tablet del local decía que sí y las comandas entraban mudas igual.
+  const [sonidoConfirmado, setSonidoConfirmado] = useState(false)
   const [confirmandoDescartar, setConfirmandoDescartar] = useState<number | null>(null)
+  const [confirmandoArreglo, setConfirmandoArreglo] = useState<number | null>(null)
 
   // ── Persistir lo que sólo vive en caja, en localStorage ──
   //
@@ -334,7 +365,15 @@ export default function CajaPage() {
   }, [local])
 
   // El navegador no deja sonar nada hasta que alguien toca la pantalla.
-  useEffect(() => prepararSonido(setSinSonido), [])
+  // Además se destraba solo con el primer toque en cualquier parte, por si
+  // nadie aprieta el botón.
+  useEffect(() => prepararSonido(setSonidoBloqueado), [])
+
+  async function encenderSonido() {
+    const anduvo = await activarSonido()
+    setSonidoConfirmado(anduvo)
+    setSonidoBloqueado(!anduvo)
+  }
 
   // Suena cuando entra un pedido que caja todavía no tenía. Sobre todo son los
   // del sitio: antes llegaban en silencio y quedaban ahí hasta que alguien
@@ -344,7 +383,7 @@ export default function CajaPage() {
     sonar([660, 880], { volumen: 0.35, duracion: 0.25, separacion: 0.18 })
   }, [])
 
-  const { pedidos, setPedidos, error, setError, conectado } = usePedidosEnVivo<Pedido>({
+  const { pedidos, setPedidos, error, setError, conectado, ultimaCarga, refrescar } = usePedidosEnVivo<Pedido>({
     local,
     // `incluirPendientes` trae además los pedidos sin atender de turnos
     // anteriores: son los que se perdían de vista al cambiar el turno.
@@ -381,10 +420,12 @@ export default function CajaPage() {
   }
 
   /**
-   * Da de baja un pedido que nadie va a preparar: el cliente lo abandonó, o
-   * entró mal. Hace falta porque los pedidos sin atender de turnos anteriores
-   * se siguen mostrando a propósito, y si no habría forma de sacarlos de la
-   * pantalla se irían apilando para siempre.
+   * Da de baja una comanda: entró mal, el cliente se arrepintió, o quedó sin
+   * atender de un turno anterior. No se borra de la base, se marca como
+   * eliminada, así que sigue estando en el historial y en el CSV del cierre.
+   *
+   * La baja también le llega a cocina por el canal en vivo, así que la comanda
+   * desaparece de la pantalla de ellos sola.
    */
   async function descartarPedido(id: number) {
     try {
@@ -401,6 +442,30 @@ export default function CajaPage() {
   }
 
   const marcarCobrado = (id: number) => cambiarEstado(id, 'cobrado', 'cobrar')
+
+  /**
+   * Marca el pedido como arreglo: sale de la cocina igual, pero no entra plata.
+   * Cierra la comanda en el mismo paso, así que no hay que apretar "cobrado"
+   * después — apretarlo sería mentir, porque no se cobró nada.
+   */
+  async function marcarArreglo(id: number) {
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metodoPago: ARREGLO, estado: 'cobrado' }),
+      })
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
+      const guardado: Pedido = await res.json()
+      setPedidos(prev => prev.map(p => p.id === guardado.id ? { ...p, ...guardado } : p))
+      setError(null)
+    } catch (err) {
+      console.error('[caja] no se pudo marcar como arreglo el pedido', id, err)
+      setError(`No se pudo marcar como arreglo el pedido #${id}. Revisá la conexión y probá de nuevo.`)
+    } finally {
+      setConfirmandoArreglo(null)
+    }
+  }
   const mandarACocina = (id: number) => cambiarEstado(id, 'en_espera', 'mandar a cocina')
 
   async function cerrarCaja() {
@@ -522,7 +587,11 @@ export default function CajaPage() {
   const totalTransferencia = porMetodo('transferencia')
   const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
-  const ticketPromedio = cobrados.length > 0 ? Math.round(granTotal / cobrados.length) : 0
+  const totalArreglos = porMetodo(ARREGLO)
+  // El ticket promedio se saca sólo sobre los que pagaron: mezclarle los
+  // arreglos lo tira para abajo y deja de querer decir algo.
+  const pagados = cobrados.filter(p => p.metodoPago !== ARREGLO)
+  const ticketPromedio = pagados.length > 0 ? Math.round(granTotal / pagados.length) : 0
 
   const totalEdicion = itemsEdicion.reduce((s, it) => s + it.precio * it.cantidad, 0)
 
@@ -575,7 +644,7 @@ export default function CajaPage() {
         <div className="flex justify-between items-start gap-2">
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex items-baseline gap-2 min-w-0">
-              <span className="text-red-500 font-black text-xl leading-none shrink-0">#{pedido.id}</span>
+              <span className="text-red-500 font-black text-xl leading-none shrink-0">{numeroDeComanda(pedido)}</span>
               <span className="font-bold text-white uppercase tracking-wide text-sm truncate">{pedido.cliente}</span>
             </div>
             <span className="flex items-center gap-1.5 text-sm font-bold tabular-nums text-zinc-300">
@@ -714,15 +783,19 @@ export default function CajaPage() {
               </div>
             )}
 
-            {/* ── Descartar un pedido viejo que nadie atendió ── */}
-            {deTurnoAnterior && (
-              confirmandoDescartar === pedido.id ? (
+            {/* ── Borrar la comanda ── */}
+            {confirmandoDescartar === pedido.id ? (
+              <div className="flex flex-col gap-2 rounded-lg border border-red-700 bg-red-950/40 p-2">
+                <span className="text-center text-[11px] font-bold text-red-200">
+                  ¿Borrar el pedido {numeroDeComanda(pedido)} de {pedido.cliente}?
+                  {yaEnvioCocina && ' Ya está en cocina: avisales.'}
+                </span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => descartarPedido(pedido.id)}
                     className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-red-700 hover:bg-red-600 text-white transition"
                   >
-                    Sí, descartar
+                    Sí, borrar
                   </button>
                   <button
                     onClick={() => setConfirmandoDescartar(null)}
@@ -731,14 +804,14 @@ export default function CajaPage() {
                     Cancelar
                   </button>
                 </div>
-              ) : (
-                <button
-                  onClick={() => setConfirmandoDescartar(pedido.id)}
-                  className="text-xs font-bold uppercase tracking-wider px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
-                >
-                  🗑️ Descartar — nadie lo atendió
-                </button>
-              )
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirmandoDescartar(pedido.id)}
+                className="text-xs font-bold uppercase tracking-wider px-3 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-white transition"
+              >
+                🗑️ {deTurnoAnterior ? 'Borrar — nadie lo atendió' : 'Borrar comanda'}
+              </button>
             )}
 
             {/* ── WhatsApp ── */}
@@ -802,6 +875,43 @@ export default function CajaPage() {
               >
                 ✓ Cobrado
               </button>
+            )}
+
+            {/* ── Arreglo: cierra la comanda sin cobrar ── */}
+            {/*
+              Sólo una vez que el pedido ya pasó a cocina. Si no, se podría
+              cerrar una comanda que nadie llegó a cocinar y el cliente se
+              quedaría esperando algo que para el sistema ya terminó.
+            */}
+            {yaEnvioCocina && pedido.metodoPago !== ARREGLO && (
+              confirmandoArreglo === pedido.id ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-amber-600 bg-amber-950/40 p-2">
+                  <span className="text-center text-[11px] font-bold text-amber-200">
+                    ¿El pedido {numeroDeComanda(pedido)} sale como arreglo? No va a contar como plata cobrada.
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => marcarArreglo(pedido.id)}
+                      className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition"
+                    >
+                      Sí, es arreglo
+                    </button>
+                    <button
+                      onClick={() => setConfirmandoArreglo(null)}
+                      className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setConfirmandoArreglo(pedido.id)}
+                  className="text-xs font-bold uppercase tracking-wider px-3 py-2 rounded-lg bg-zinc-800 hover:bg-amber-700 text-amber-500 hover:text-black transition"
+                >
+                  🤝 Arreglo — sin cobrar
+                </button>
+              )
             )}
           </div>
         )}
@@ -1087,23 +1197,15 @@ export default function CajaPage() {
       </header>
 
       <main className="p-4 max-w-7xl mx-auto">
-        {!conectado && (
-          <div role="status" className="mt-2 mb-4 rounded bg-amber-950 border border-amber-500 px-4 py-3">
-            <span className="text-sm font-bold text-amber-200">
-              Sin conexión en vivo. La lista se actualiza sola cada 20 segundos, pero puede tardar.
-            </span>
-          </div>
-        )}
+        <BarraDePantalla
+          conectado={conectado}
+          ultimaCarga={ultimaCarga}
+          onRefrescar={refrescar}
+          sinSonido={!sonidoConfirmado || sonidoBloqueado}
+          onActivarSonido={encenderSonido}
+        />
 
-        {sinSonido && (
-          <div role="status" className="mt-2 mb-4 rounded bg-zinc-800 border border-zinc-600 px-4 py-3">
-            <span className="text-sm font-bold text-zinc-300">
-              🔇 El navegador tiene el sonido bloqueado. Tocá la pantalla una vez para activarlo.
-            </span>
-          </div>
-        )}
-
-        {error && (
+                {error && (
           <div
             role="alert"
             className="mt-2 mb-4 flex items-center justify-between gap-3 rounded bg-red-950 border border-red-600 px-4 py-3"
@@ -1129,7 +1231,8 @@ export default function CajaPage() {
             { label: 'Transferencia', valor: formatearPrecio(totalTransferencia), icono: '📲', color: 'border-blue-700' },
             { label: 'Tarjeta',       valor: formatearPrecio(totalTarjeta),       icono: '💳', color: 'border-violet-700' },
             { label: 'Total del día', valor: formatearPrecio(granTotal),          icono: '🏦', color: 'border-red-600' },
-            { label: 'Pedidos',       valor: String(cobrados.length),             icono: '📋', color: 'border-zinc-600' },
+            { label: 'Arreglos',      valor: formatearPrecio(totalArreglos),      icono: '🤝', color: 'border-amber-600' },
+            { label: 'Pedidos',       valor: String(pagados.length),              icono: '📋', color: 'border-zinc-600' },
             { label: 'Ticket prom.',  valor: cobrados.length > 0 ? formatearPrecio(ticketPromedio) : '—', icono: '📊', color: 'border-amber-600' },
           ].map(({ label, valor, icono, color }) => (
             <div key={label} className={`bg-zinc-900 border-l-4 ${color} rounded-r-lg px-4 py-3`}>

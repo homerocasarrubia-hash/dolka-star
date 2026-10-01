@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Pusher from 'pusher-js'
+import { canalDelLocal } from './canal'
 
 export interface PedidoConId {
   id: number
@@ -29,10 +30,17 @@ export interface PedidoConId {
   creadoEn: string
 }
 
-/** Con el socket vivo, un repaso espaciado por si algo se perdió igual. */
-const REFRESCO_CONECTADO_MS = 5 * 60 * 1000
-/** Sin socket, la lista se sostiene a puro fetch. */
-const REFRESCO_SIN_SOCKET_MS = 20 * 1000
+/**
+ * Cada cuánto se le vuelve a preguntar al servidor, haya socket o no.
+ *
+ * Antes, con el socket "conectado", se preguntaba cada cinco minutos. Eso
+ * alcanza sólo si el socket además está entregando: en el local pasó que la
+ * conexión figuraba viva pero los pedidos no llegaban, y la pantalla se quedaba
+ * atrasada hasta que alguien la recargaba a mano. Pusher sigue sirviendo para
+ * que el pedido entre al instante; esto es la red de seguridad, y tiene que
+ * estar lo bastante seguido como para que nadie necesite recargar nada.
+ */
+const REFRESCO_MS = 15 * 1000
 
 interface Opciones<T> {
   /** Local elegido en la pantalla. */
@@ -60,6 +68,9 @@ export function usePedidosEnVivo<T extends PedidoConId>({
   const [pedidos, setPedidos] = useState<T[]>([])
   const [error, setError] = useState<string | null>(null)
   const [conectado, setConectado] = useState(false)
+  // Cuándo fue la última vez que el servidor contestó. Se muestra en pantalla:
+  // si algo se traba, se nota en vez de parecer que no hay pedidos.
+  const [ultimaCarga, setUltimaCarga] = useState<Date | null>(null)
 
   // Estas cambian de identidad en cada render. Por ref, para que el efecto no
   // se vuelva a suscribir sesenta veces por minuto.
@@ -113,6 +124,7 @@ export function usePedidosEnVivo<T extends PedidoConId>({
       yaCargoUnaVez.current = true
 
       setPedidos(lista)
+      setUltimaCarga(new Date())
       setError(null)
     } catch (err) {
       if (mia !== cargaActual.current) return
@@ -156,9 +168,18 @@ export function usePedidosEnVivo<T extends PedidoConId>({
 
     if (clave && cluster) {
       pusher = new Pusher(clave, { cluster })
-      const channel = pusher.subscribe(`cocina-${local}`)
+      const channel = pusher.subscribe(canalDelLocal(local))
       channel.bind('nuevo-pedido', upsert)
       channel.bind('pedido-actualizado', upsert)
+
+      // El socket puede conectar y la suscripción al canal fallar igual. Sin
+      // esto la pantalla se mostraba "en vivo" sin estarlo, que es peor que
+      // decir la verdad: no llega ningún pedido y nadie entiende por qué.
+      channel.bind('pusher:subscription_error', (datos: unknown) => {
+        console.error('[pedidos] no se pudo suscribir al canal del local:', datos)
+        setConectado(false)
+      })
+      channel.bind('pusher:subscription_succeeded', () => setConectado(true))
       channel.bind('caja-cerrada', () => {
         corte.current = Date.now()
         setPedidos([])
@@ -199,14 +220,13 @@ export function usePedidosEnVivo<T extends PedidoConId>({
     }
   }, [local, activo, refrescar])
 
-  // Mientras no hay socket, la lista se sostiene a puro fetch seguido. Con el
-  // socket vivo alcanza un repaso espaciado. Va en su propio efecto para que
-  // cambiar de ritmo no vuelva a suscribir el canal.
+  // La red de seguridad: se vuelve a pedir la lista cada tanto, siempre. Va en
+  // su propio efecto para no volver a suscribir el canal en cada vuelta.
   useEffect(() => {
     if (!activo) return
-    const reloj = setInterval(refrescar, conectado ? REFRESCO_CONECTADO_MS : REFRESCO_SIN_SOCKET_MS)
+    const reloj = setInterval(refrescar, REFRESCO_MS)
     return () => clearInterval(reloj)
-  }, [activo, conectado, refrescar])
+  }, [activo, refrescar])
 
-  return { pedidos, setPedidos, error, setError, conectado, refrescar }
+  return { pedidos, setPedidos, error, setError, conectado, ultimaCarga, refrescar }
 }

@@ -9,10 +9,17 @@ import { conReintento, prisma } from "@/lib/prisma";
 import { avisar } from "@/lib/pusher";
 import { rolDeLaCookie } from "@/lib/acceso";
 import { AVISO_CERRADO, estaAbierto } from "@/lib/horario";
+import { etiquetaDelTurno } from "@/lib/turno";
 import { esLocalId, LOCAL_POR_DEFECTO } from "@/data/locales";
 
 /** Las tres formas de entrega que manejan el sitio y la app del mozo. */
 const MODALIDADES = new Set(["local", "retirar", "llevar"]);
+
+/**
+ * Las formas de pago. "arreglo" es la que no entra en la caja: comida de la
+ * casa, un canje, lo que sea que salió sin que entrara plata.
+ */
+const METODOS_DE_PAGO = new Set(["efectivo", "transferencia", "tarjeta", "arreglo"]);
 
 function malPedido(mensaje: string) {
   return NextResponse.json({ error: mensaje }, { status: 400 });
@@ -72,9 +79,8 @@ function validar(body: unknown): { error: string } | { datos: DatosPedido } {
   }
 
   const telefono = typeof b.telefono === "string" ? b.telefono.trim() : "";
-  const metodoPago = typeof b.metodoPago === "string" && b.metodoPago.trim()
-    ? b.metodoPago.trim()
-    : "efectivo";
+  const pedido = typeof b.metodoPago === "string" ? b.metodoPago.trim() : "";
+  const metodoPago = METODOS_DE_PAGO.has(pedido) ? pedido : "efectivo";
 
   return {
     datos: {
@@ -88,6 +94,44 @@ function validar(body: unknown): { error: string } | { datos: DatosPedido } {
       metodoPago,
     },
   };
+}
+
+/**
+ * Guarda el pedido con su número de comanda.
+ *
+ * El número arranca en 1 en cada turno y en cada local: el `id` de la base no
+ * sirve para cantarlo porque es histórico, y la primera comanda de una noche
+ * salía como "#51". Se calcula como el siguiente del turno.
+ *
+ * Dos pedidos que entran en el mismo instante pueden pedir el mismo número; la
+ * base lo rechaza por el índice único y acá se vuelve a intentar. Es una
+ * carrera corta y rara, con un par de vueltas alcanza.
+ */
+async function guardarConNumero(datos: DatosPedido) {
+  const turno = etiquetaDelTurno();
+
+  for (let intento = 0; intento < 5; intento++) {
+    const ultimo = await prisma.pedido.findFirst({
+      where: { local: datos.local, turno },
+      orderBy: { numero: "desc" },
+      select: { numero: true },
+    });
+
+    try {
+      return await prisma.pedido.create({
+        data: { ...datos, turno, numero: (ultimo?.numero ?? 0) + 1 },
+      });
+    } catch (error) {
+      // P2002 = chocó con el índice único: otro pedido se quedó con ese número.
+      const codigo = (error as { code?: string })?.code;
+      if (codigo !== "P2002") throw error;
+    }
+  }
+
+  // Cinco choques seguidos no deberían pasar nunca. Antes de perder el pedido,
+  // se guarda sin número: aparece igual en las pantallas, con su id.
+  console.error("[pedidos] no se pudo asignar número de comanda, se guarda sin él");
+  return prisma.pedido.create({ data: { ...datos, turno } });
 }
 
 export async function GET(req: NextRequest) {
@@ -161,10 +205,11 @@ export async function POST(req: NextRequest) {
 
   let pedido;
   try {
-    // Sin reintento a propósito: si la primera llegó a guardarse y lo que se
-    // perdió fue la respuesta, repetirla dejaría el pedido cargado dos veces y
-    // la cocina haría el doble. Mejor que el cliente vea el error y decida.
-    pedido = await prisma.pedido.create({ data: revisado.datos });
+    // Sin reintento por caída de conexión a propósito: si la primera llegó a
+    // guardarse y lo que se perdió fue la respuesta, repetirla dejaría el pedido
+    // cargado dos veces y la cocina haría el doble. Mejor que el cliente vea el
+    // error y decida.
+    pedido = await guardarConNumero(revisado.datos);
   } catch (error) {
     console.error("[pedidos] no se pudo guardar:", error);
     return NextResponse.json({ error: "No se pudo guardar el pedido." }, { status: 500 });

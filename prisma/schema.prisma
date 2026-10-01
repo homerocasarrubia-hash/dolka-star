@@ -41,6 +41,12 @@ model Score {
 
 model Pedido {
   id         Int      @id @default(autoincrement())
+  /// Número de comanda que se canta en el local: arranca en 1 cada turno.
+  /// El `id` sigue siendo la clave real; esto es lo que ve la gente.
+  numero     Int?
+  /// El turno al que pertenece, como "2026-10-01" (la fecha en que arrancó).
+  /// Dos pedidos del mismo turno y local no pueden tener el mismo número.
+  turno      String?
   local      String
   cliente    String
   telefono   String?
@@ -52,4 +58,6 @@ model Pedido {
   estado     String   @default("pendiente")
   creadoEn   DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  @@unique([local, turno, numero])
 }
