@@ -3,6 +3,7 @@
 import CheckeredDivider from "./CheckeredDivider";
 import { useLocal } from "./LocalProvider";
 import { telefonoLegible, whatsappHref } from "@/data/locales";
+import { HORARIO_TEXTO } from "@/lib/horario";
 
 export default function Footer() {
   const { local } = useLocal();
@@ -26,7 +27,7 @@ export default function Footer() {
           <h3 className="font-display text-lg mb-3 text-red-primary">Contacto</h3>
           <ul className="text-sm text-white/70 space-y-1.5">
             <li>{local.direccion}</li>
-            <li>Lun–Dom: 21:00 a 00:00</li>
+            <li>{HORARIO_TEXTO}</li>
             {/* Belén todavía no tiene línea: la fila no se inventa. */}
             {local.telefono && (
               <li>

@@ -4,6 +4,8 @@
 // parte de la carta se muestra. Las páginas no saben de ciudades, le preguntan
 // al local elegido.
 
+import { HORARIO_TEXTO } from "@/lib/horario";
+
 export type LocalId = "andalgala" | "belen";
 
 /**
@@ -49,7 +51,7 @@ export const LOCALES: Record<LocalId, Local> = {
     direccion: "Belgrano 363, Andalgalá, Catamarca",
     telefono: "3835517049",
     whatsappPedidos: "5493835517049",
-    horario: "Lunes a domingo: 21:00 a 00:00",
+    horario: HORARIO_TEXTO,
     mapa: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3436.123456789!2d-66.3211!3d-27.5987!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sBelgrano+363%2C+Andalgal%C3%A1!5e0!3m2!1ses!2sar!4v1",
     intro:
       "En el corazón de Andalgalá, hacemos hamburguesas sin vueltas: buena carne, pan artesanal y sabor directo al hueso. También pizzas al horno de barro y lomitos que hablan por sí solos.",
@@ -63,7 +65,7 @@ export const LOCALES: Record<LocalId, Local> = {
     // Todavía no hay línea propia: donde iría el teléfono, no va nada.
     telefono: "3835518217",
     whatsappPedidos: "5493835518217",
-    horario: "Lunes a domingo: 21:00 a 00:00",
+    horario: HORARIO_TEXTO,
     // Mismo formato que el de Andalgalá, que es el que el sitio ya usa y anda:
     // el `pb` lleva las coordenadas de Belén y el texto del lugar en `!2s`.
     mapa: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3436.123456789!2d-67.0281!3d-27.6531!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sBelgrano+56%2C+Bel%C3%A9n%2C+Catamarca!5e0!3m2!1ses!2sar!4v1",

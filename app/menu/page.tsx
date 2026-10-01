@@ -224,7 +224,7 @@ export default function MenuPage() {
       <section className="max-w-5xl mx-auto px-4 py-16">
         <h1 className="font-display text-5xl text-red-primary mb-2 text-center">Menú</h1>
         <p className="font-body text-center text-ink/50 text-sm mb-12">
-          {local.direccion} · 21:00 a 00:00
+          {local.direccion} · {local.horario}
         </p>
 
         {menu.map((categoria, idx) => (
