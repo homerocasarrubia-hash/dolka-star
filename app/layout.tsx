@@ -5,7 +5,7 @@ import ConditionalFooter from "@/components/ConditionalFooter";
 import LocalProvider from "@/components/LocalProvider";
 
 export const metadata: Metadata = {
-  title: "Dolka Star — Hamburguesas y Pizzas en Andalgalá",
+  title: "Dolka Star — Hamburguesas, Lomitos y más | Andalgalá y Belén",
   description:
     "La mejor hamburguesería de Andalgalá, Catamarca. Hamburguesas, lomitos, sanguches de milanesa y pizzas al horno de barro. Belgrano 363.",
   openGraph: {
