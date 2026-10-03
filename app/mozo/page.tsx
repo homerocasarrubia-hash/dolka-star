@@ -205,6 +205,10 @@ export default function MozoPage() {
   // ── Form: manual item ──
   const [itemManual, setItemManual] = useState<ItemForm>({ ...ITEM_VACIO })
 
+  // ── Promo: un ítem armado a mano, con nombre y precio libres ──
+  const [promoNombre, setPromoNombre] = useState('')
+  const [promoPrecio, setPromoPrecio] = useState('')
+
   // ── Form: delivery ──
   const [costoEnvio, setCostoEnvio] = useState('')
 
@@ -302,6 +306,8 @@ export default function MozoPage() {
     setNotaRapida(null)
     setBusqueda('')
     setItemManual({ ...ITEM_VACIO })
+    setPromoNombre('')
+    setPromoPrecio('')
     setCostoEnvio('')
     setEnviado(false)
     setErrorEnvio(null)
@@ -359,6 +365,26 @@ export default function MozoPage() {
   }
 
   // ── Manual picker ──
+
+  /**
+   * Suma una promo al pedido. Es un ítem común con el nombre prefijado, para
+   * que en la comanda de cocina y en el ticket se lea de dónde salió el precio.
+   */
+  function agregarPromo() {
+    const nombre = promoNombre.trim()
+    const precio = Math.round(Number(promoPrecio))
+    if (!nombre || !Number.isFinite(precio) || precio <= 0) return
+
+    setItems(prev => [...prev, {
+      nombre: `Promo: ${nombre}`,
+      variante: '',
+      cantidad: 1,
+      precio: String(precio),
+      aclaracion: '',
+    }])
+    setPromoNombre('')
+    setPromoPrecio('')
+  }
 
   function agregarManual() {
     if (!itemManual.nombre.trim()) return
@@ -934,6 +960,60 @@ export default function MozoPage() {
                                 {EMOJI_POR_CAT[cat.id] ?? '🍽️'} {LABEL_CORTO[cat.id] ?? cat.label}
                               </button>
                             ))}
+
+                            {/* Promo: no es una categoría de la carta, va al final */}
+                            <button
+                              onClick={() => { setCategoriaActiva(carta.length); setVariantePendiente(null); setNotaRapida(null) }}
+                              className={`shrink-0 px-3 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition ${
+                                categoriaActiva === carta.length
+                                  ? 'bg-amber-600 text-black'
+                                  : 'bg-zinc-800 text-amber-500 hover:text-amber-300'
+                              }`}
+                            >
+                              🎁 Promo
+                            </button>
+                          </div>
+                        )}
+
+                        {/* ── Formulario de promo ── */}
+                        {!busqueda.trim() && categoriaActiva === carta.length && (
+                          <div className="bg-zinc-800 rounded-xl p-3 space-y-2 border border-amber-700">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">
+                              Promo suelta — nombre y precio a mano
+                            </p>
+
+                            <input
+                              value={promoNombre}
+                              onChange={e => setPromoNombre(e.target.value)}
+                              placeholder='Ej: "Burger + bebida"'
+                              className="w-full bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-amber-600"
+                            />
+
+                            <div className="flex items-center gap-2">
+                              <span className="text-zinc-400 text-sm font-bold">$</span>
+                              <input
+                                type="number"
+                                inputMode="numeric"
+                                min={0}
+                                value={promoPrecio}
+                                onChange={e => setPromoPrecio(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && agregarPromo()}
+                                placeholder="Precio"
+                                className="flex-1 bg-zinc-700 border border-zinc-600 rounded-lg px-3 py-2 text-white text-xs placeholder:text-zinc-500 focus:outline-none focus:border-amber-600"
+                              />
+                            </div>
+
+                            <button
+                              onClick={agregarPromo}
+                              disabled={!promoNombre.trim() || !(Number(promoPrecio) > 0)}
+                              className="w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-zinc-700 disabled:text-zinc-500 text-black font-black uppercase tracking-wider text-xs transition"
+                            >
+                              + Agregar al pedido
+                            </button>
+
+                            <p className="text-[10px] text-zinc-500">
+                              Se carga como <span className="font-mono">Promo: {promoNombre.trim() || '…'}</span>
+                            </p>
                           </div>
                         )}
 

@@ -10,16 +10,11 @@ import { avisar } from "@/lib/pusher";
 import { rolDeLaCookie } from "@/lib/acceso";
 import { AVISO_CERRADO, estaAbierto } from "@/lib/horario";
 import { etiquetaDelTurno } from "@/lib/turno";
+import { esMetodoValido } from "@/lib/pago";
 import { esLocalId, LOCAL_POR_DEFECTO } from "@/data/locales";
 
 /** Las tres formas de entrega que manejan el sitio y la app del mozo. */
 const MODALIDADES = new Set(["local", "retirar", "llevar"]);
-
-/**
- * Las formas de pago. "arreglo" es la que no entra en la caja: comida de la
- * casa, un canje, lo que sea que salió sin que entrara plata.
- */
-const METODOS_DE_PAGO = new Set(["efectivo", "transferencia", "tarjeta", "arreglo"]);
 
 function malPedido(mensaje: string) {
   return NextResponse.json({ error: mensaje }, { status: 400 });
@@ -79,8 +74,8 @@ function validar(body: unknown): { error: string } | { datos: DatosPedido } {
   }
 
   const telefono = typeof b.telefono === "string" ? b.telefono.trim() : "";
-  const pedido = typeof b.metodoPago === "string" ? b.metodoPago.trim() : "";
-  const metodoPago = METODOS_DE_PAGO.has(pedido) ? pedido : "efectivo";
+  const comoVino = typeof b.metodoPago === "string" ? b.metodoPago.trim() : "";
+  const metodoPago = esMetodoValido(comoVino) ? comoVino : "efectivo";
 
   return {
     datos: {

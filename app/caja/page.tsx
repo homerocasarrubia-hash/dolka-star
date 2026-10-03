@@ -6,6 +6,13 @@ import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurno } from '@/lib/turno'
 import { numeroDeWhatsapp, pareceCelular } from '@/lib/telefono'
+import {
+  armarMixto,
+  describirPago,
+  leerMixto,
+  llevaTransferencia,
+  repartoDelPago,
+} from '@/lib/pago'
 import { menu as categorias } from '@/data/menu'
 import type { MenuItem } from '@/data/menu'
 
@@ -41,6 +48,20 @@ const METODO_LABEL: Record<string, { texto: string; icono: string; clase: string
 
 /** El pedido salió sin que entrara plata: no va al arqueo. */
 const ARREGLO = 'arreglo'
+
+/** Cómo se pinta la forma de pago en la tarjeta. */
+function insigniaDePago(metodoPago: string): { texto: string; icono: string; clase: string } {
+  if (leerMixto(metodoPago)) {
+    return { texto: describirPago(metodoPago), icono: '🔀', clase: 'bg-sky-700 text-white' }
+  }
+  return (
+    METODO_LABEL[metodoPago] ?? {
+      texto: metodoPago,
+      icono: '?',
+      clase: 'bg-zinc-700 text-white',
+    }
+  )
+}
 
 const MODALIDAD_LABEL: Record<string, string> = {
   local:   'En el local',
@@ -131,8 +152,9 @@ function armarMensajeCliente(pedido: Pedido, costoEnvio: number, descuento: numb
 
   const totalFinal = montoCobrado(pedido, { envio: costoEnvio, descuento })
 
-  let pago = `Pago: ${METODO_LABEL[pedido.metodoPago]?.texto ?? pedido.metodoPago}`
-  if (pedido.metodoPago === 'transferencia') {
+  let pago = `Pago: ${describirPago(pedido.metodoPago)}`
+  // El alias también va cuando la transferencia es sólo una parte del pago.
+  if (llevaTransferencia(pedido.metodoPago)) {
     pago += '\nAlias: *dolka2026*'
   }
 
@@ -186,15 +208,22 @@ function exportarCSV(
   // que son plata que entra o que se resigna. Antes el cierre sumaba sólo
   // `p.total` y el arqueo nunca cerraba con lo que había en la caja.
   const cobrados = pedidos.filter(p => p.estado === 'cobrado' || p.estado === 'entregado')
-  const porMetodo = (metodo: string) =>
-    cobrados.filter(p => p.metodoPago === metodo).reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
+  // Un pago mixto aporta a dos medios a la vez, así que no alcanza con filtrar
+  // por `metodoPago`: hay que repartir el monto de cada pedido.
+  const porMetodo = (metodo: 'efectivo' | 'transferencia' | 'tarjeta') =>
+    cobrados.reduce(
+      (s, p) => s + repartoDelPago(p.metodoPago, montoCobrado(p, ajusteDe(p)))[metodo],
+      0,
+    )
   const totalEfectivo      = porMetodo('efectivo')
   const totalTransferencia = porMetodo('transferencia')
   const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
   // Los arreglos se informan, pero afuera del total: no es plata que esté en
   // la caja, y sumarla haría que el arqueo nunca cierre.
-  const totalArreglos = porMetodo(ARREGLO)
+  const totalArreglos = cobrados
+    .filter(p => p.metodoPago === ARREGLO)
+    .reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
 
   const fechaInicio = new Date(sesionInicio)
   const dd   = String(fechaInicio.getDate()).padStart(2, '0')
@@ -235,7 +264,7 @@ function exportarCSV(
       // En un arreglo no entró plata: la columna de cobrado va vacía y el
       // monto queda a la vista sólo en el subtotal.
       p.metodoPago === ARREGLO ? '' : formatearPrecio(montoCobrado(p, ajuste)),
-      METODO_LABEL[p.metodoPago]?.texto ?? p.metodoPago,
+      describirPago(p.metodoPago),
       ESTADO_LABEL[p.estado] ?? p.estado,
     ))
   }
@@ -301,6 +330,10 @@ export default function CajaPage() {
   const [sonidoConfirmado, setSonidoConfirmado] = useState(false)
   const [confirmandoDescartar, setConfirmandoDescartar] = useState<number | null>(null)
   const [confirmandoArreglo, setConfirmandoArreglo] = useState<number | null>(null)
+
+  // Pago repartido entre efectivo y transferencia, mientras se está cargando.
+  // No se persiste: apenas se cobra, lo que vale queda guardado en el pedido.
+  const [mixtos, setMixtos] = useState<Record<number, { efectivo: string; transferencia: string }>>({})
 
   // ── Persistir lo que sólo vive en caja, en localStorage ──
   //
@@ -441,7 +474,54 @@ export default function CajaPage() {
     }
   }
 
+  /** Abre el pago mixto con el total ya puesto en efectivo, que es lo más común. */
+  function abrirMixto(id: number, total: number) {
+    setMixtos(prev => ({ ...prev, [id]: { efectivo: String(total), transferencia: '' } }))
+  }
+
+  function cambiarMixto(id: number, campo: 'efectivo' | 'transferencia', valor: string) {
+    setMixtos(prev => ({ ...prev, [id]: { ...prev[id], [campo]: valor } }))
+  }
+
+  function quitarMixto(id: number) {
+    setMixtos(prev => {
+      const resto = { ...prev }
+      delete resto[id]
+      return resto
+    })
+  }
+
   const marcarCobrado = (id: number) => cambiarEstado(id, 'cobrado', 'cobrar')
+
+  /**
+   * Cobra un pedido repartido entre efectivo y transferencia. Guarda los dos
+   * montos dentro de `metodoPago`, que es el único campo que hay para esto, y
+   * cierra el pedido en el mismo paso.
+   */
+  async function cobrarMixto(id: number, efectivo: number, transferencia: number) {
+    try {
+      const res = await fetch(`/api/pedidos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metodoPago: armarMixto(efectivo, transferencia),
+          estado: 'cobrado',
+        }),
+      })
+      if (!res.ok) throw new Error(`PATCH ${res.status}`)
+      const guardado: Pedido = await res.json()
+      setPedidos(prev => prev.map(p => p.id === guardado.id ? { ...p, ...guardado } : p))
+      setMixtos(prev => {
+        const resto = { ...prev }
+        delete resto[id]
+        return resto
+      })
+      setError(null)
+    } catch (err) {
+      console.error('[caja] no se pudo cobrar en mixto el pedido', id, err)
+      setError(`No se pudo cobrar el pedido #${id}. Revisá la conexión y probá de nuevo.`)
+    }
+  }
 
   /**
    * Marca el pedido como arreglo: sale de la cocina igual, pero no entra plata.
@@ -581,13 +661,19 @@ export default function CajaPage() {
   )
 
   const cobrados = pedidos.filter(p => p.estado === 'cobrado' || p.estado === 'entregado')
-  const porMetodo = (metodo: string) =>
-    cobrados.filter(p => p.metodoPago === metodo).reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
+  // Igual que en el CSV: un pago mixto cae en dos medios, no en uno.
+  const porMetodo = (metodo: 'efectivo' | 'transferencia' | 'tarjeta') =>
+    cobrados.reduce(
+      (s, p) => s + repartoDelPago(p.metodoPago, montoCobrado(p, ajusteDe(p)))[metodo],
+      0,
+    )
   const totalEfectivo      = porMetodo('efectivo')
   const totalTransferencia = porMetodo('transferencia')
   const totalTarjeta       = porMetodo('tarjeta')
   const granTotal = totalEfectivo + totalTransferencia + totalTarjeta
-  const totalArreglos = porMetodo(ARREGLO)
+  const totalArreglos = cobrados
+    .filter(p => p.metodoPago === ARREGLO)
+    .reduce((s, p) => s + montoCobrado(p, ajusteDe(p)), 0)
   // El ticket promedio se saca sólo sobre los que pagaron: mezclarle los
   // arreglos lo tira para abajo y deja de querer decir algo.
   const pagados = cobrados.filter(p => p.metodoPago !== ARREGLO)
@@ -607,7 +693,7 @@ export default function CajaPage() {
   // ─────────────────────────────────────────
 
   const tarjeta = (pedido: Pedido, enHistorial = false) => {
-    const metodo = METODO_LABEL[pedido.metodoPago] ?? { texto: pedido.metodoPago, icono: '?', clase: 'bg-zinc-700 text-white' }
+    const metodo = insigniaDePago(pedido.metodoPago)
     const yaEnvioCocina = pedido.estado !== 'pendiente'
 
     // Un solo ajuste para todo: lo que muestra la tarjeta, lo que dice el
@@ -627,6 +713,12 @@ export default function CajaPage() {
     const descuentoStr = descuentos[pedido.id] ?? ''
     const descuentoNum = ajuste.descuento
     const totalFinal = montoCobrado(pedido, ajuste)
+
+    // Pago mixto en curso para este pedido, si lo hay.
+    const mixto = mixtos[pedido.id]
+    const efectivoMixto = Math.max(0, Math.round(Number(mixto?.efectivo)) || 0)
+    const transferenciaMixto = Math.max(0, Math.round(Number(mixto?.transferencia)) || 0)
+    const sumaMixto = efectivoMixto + transferenciaMixto
 
     const mensaje = pedido.telefono ? armarMensajeCliente(pedido, costoEnvioNum, descuentoNum) : ''
     const waLink  = pedido.telefono ? linkWhatsApp(pedido.telefono, mensaje) : null
@@ -869,12 +961,92 @@ export default function CajaPage() {
 
             {/* ── Cobrado ── */}
             {pedido.estado === 'listo' && (
-              <button
-                onClick={() => marcarCobrado(pedido.id)}
-                className="text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition"
-              >
-                ✓ Cobrado
-              </button>
+              mixto ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-sky-700 bg-sky-950/40 p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-sky-300">
+                      🔀 Pago mixto
+                    </span>
+                    <button
+                      onClick={() => quitarMixto(pedido.id)}
+                      className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 hover:text-white transition"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[10px] font-black uppercase tracking-wider text-zinc-400">💵 Efectivo</span>
+                    <span className="text-zinc-400 text-sm font-bold">$</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={mixto.efectivo}
+                      onChange={e => cambiarMixto(pedido.id, 'efectivo', e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white text-sm text-right tabular-nums focus:outline-none focus:border-sky-600"
+                    />
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="w-20 shrink-0 text-[10px] font-black uppercase tracking-wider text-zinc-400">📲 Transfer.</span>
+                    <span className="text-zinc-400 text-sm font-bold">$</span>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      min={0}
+                      value={mixto.transferencia}
+                      onChange={e => cambiarMixto(pedido.id, 'transferencia', e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white text-sm text-right tabular-nums focus:outline-none focus:border-sky-600"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-sky-800 pt-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                      Suma / total
+                    </span>
+                    <span className={`text-sm font-black tabular-nums ${sumaMixto >= totalFinal ? 'text-green-400' : 'text-amber-400'}`}>
+                      {formatearPrecio(sumaMixto)} / {formatearPrecio(totalFinal)}
+                    </span>
+                  </div>
+
+                  {sumaMixto < totalFinal ? (
+                    <p className="text-[11px] font-bold text-amber-400 text-center">
+                      ⚠ Faltan {formatearPrecio(totalFinal - sumaMixto)}
+                    </p>
+                  ) : sumaMixto > totalFinal ? (
+                    <p className="text-[11px] font-bold text-zinc-400 text-center">
+                      Vuelto: {formatearPrecio(sumaMixto - totalFinal)}
+                    </p>
+                  ) : null}
+
+                  <button
+                    onClick={() => cobrarMixto(pedido.id, efectivoMixto, transferenciaMixto)}
+                    disabled={sumaMixto < totalFinal}
+                    className="text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-sky-700 hover:bg-sky-600 disabled:bg-zinc-800 disabled:text-zinc-500 text-white transition"
+                  >
+                    ✓ Cobrado — mixto
+                  </button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => marcarCobrado(pedido.id)}
+                    className="flex-1 text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-zinc-700 hover:bg-zinc-600 text-white transition"
+                  >
+                    ✓ Cobrado
+                  </button>
+                  <button
+                    onClick={() => abrirMixto(pedido.id, totalFinal)}
+                    className="text-xs font-black uppercase tracking-wider px-3 py-2.5 rounded-lg bg-zinc-800 hover:bg-sky-700 text-sky-400 hover:text-white transition"
+                    title="Cobrar una parte en efectivo y otra por transferencia"
+                  >
+                    🔀 Mixto
+                  </button>
+                </div>
+              )
             )}
 
             {/* ── Arreglo: cierra la comanda sin cobrar ── */}
