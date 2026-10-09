@@ -6,6 +6,7 @@ import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurno } from '@/lib/turno'
 import { numeroDeWhatsapp, pareceCelular } from '@/lib/telefono'
+import { aliasDePedido } from '@/data/locales'
 import {
   armarMixto,
   describirPago,
@@ -155,7 +156,7 @@ function armarMensajeCliente(pedido: Pedido, costoEnvio: number, descuento: numb
   let pago = `Pago: ${describirPago(pedido.metodoPago)}`
   // El alias también va cuando la transferencia es sólo una parte del pago.
   if (llevaTransferencia(pedido.metodoPago)) {
-    pago += '\nAlias: *dolka2026*'
+    pago += `\nAlias: *${aliasDePedido(pedido.local)}*`
   }
 
   return (
@@ -769,9 +770,9 @@ export default function CajaPage() {
           <span className={`text-[10px] font-black px-2 py-0.5 rounded tracking-widest flex items-center gap-1 ${metodo.clase}`}>
             {metodo.icono} {metodo.texto.toUpperCase()}
           </span>
-          {pedido.metodoPago === 'transferencia' && (
+          {llevaTransferencia(pedido.metodoPago) && (
             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-blue-900 text-blue-300 tracking-widest">
-              alias: dolka2026
+              alias: {aliasDePedido(pedido.local)}
             </span>
           )}
         </div>

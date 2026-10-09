@@ -37,6 +37,14 @@ export type Local = {
    */
   whatsappPedidos: string;
   horario: string;
+  /**
+   * Alias de transferencia que se le pasa al cliente al cobrarle.
+   *
+   * Es de cada local porque son cuentas distintas: antes estaba escrito a mano
+   * adentro de la caja y le mandaba el alias de Andalgalá a los clientes de
+   * Belén, o sea plata que caía en la cuenta equivocada.
+   */
+  aliasTransferencia: string;
   /** src del iframe de Google Maps. */
   mapa: string;
   /** Presentación de la portada: nombra la ciudad y lo que se cocina ahí. */
@@ -52,6 +60,7 @@ export const LOCALES: Record<LocalId, Local> = {
     telefono: "3835517049",
     whatsappPedidos: "5493835517049",
     horario: HORARIO_TEXTO,
+    aliasTransferencia: "dolka2026",
     mapa: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3436.123456789!2d-66.3211!3d-27.5987!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sBelgrano+363%2C+Andalgal%C3%A1!5e0!3m2!1ses!2sar!4v1",
     intro:
       "En el corazón de Andalgalá, hacemos hamburguesas sin vueltas: buena carne, pan artesanal y sabor directo al hueso. También pizzas al horno de barro y lomitos que hablan por sí solos.",
@@ -66,6 +75,7 @@ export const LOCALES: Record<LocalId, Local> = {
     telefono: "3835518217",
     whatsappPedidos: "5493835518217",
     horario: HORARIO_TEXTO,
+    aliasTransferencia: "dolkabelen26",
     // Mismo formato que el de Andalgalá, que es el que el sitio ya usa y anda:
     // el `pb` lleva las coordenadas de Belén y el texto del lugar en `!2s`.
     mapa: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3436.123456789!2d-67.0281!3d-27.6531!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sBelgrano+56%2C+Bel%C3%A9n%2C+Catamarca!5e0!3m2!1ses!2sar!4v1",
@@ -118,6 +128,17 @@ export function localGuardado(): LocalId {
   } catch {
     return LOCAL_POR_DEFECTO;
   }
+}
+
+/**
+ * El alias de transferencia del local que hizo el pedido.
+ *
+ * Recibe el `local` del pedido y no el elegido en pantalla: así, aunque en caja
+ * se cambie de sucursal, cada pedido lleva el alias de la cuenta que le
+ * corresponde.
+ */
+export function aliasDePedido(local: string): string {
+  return LOCALES[esLocalId(local) ? local : LOCAL_POR_DEFECTO].aliasTransferencia;
 }
 
 /** Teléfono en formato lindo para mostrar: 3835 517049. */
