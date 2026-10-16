@@ -7,6 +7,7 @@ import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurno } from '@/lib/turno'
 import { numeroDeWhatsapp, pareceCelular } from '@/lib/telefono'
 import { aliasDePedido } from '@/data/locales'
+import type { Contacto } from '@/app/api/admin/numeros/route'
 import {
   armarMixto,
   describirPago,
@@ -332,6 +333,15 @@ export default function CajaPage() {
   const [confirmandoDescartar, setConfirmandoDescartar] = useState<number | null>(null)
   const [confirmandoArreglo, setConfirmandoArreglo] = useState<number | null>(null)
 
+  // ── Pestañas ──
+  const [tab, setTab] = useState<'pedidos' | 'contactos'>('pedidos')
+
+  // ── Agenda de clientes ──
+  const [contactos, setContactos] = useState<Contacto[]>([])
+  const [cargandoContactos, setCargandoContactos] = useState(false)
+  const [errorContactos, setErrorContactos] = useState<string | null>(null)
+  const [copiado, setCopiado] = useState(false)
+
   // Pago repartido entre efectivo y transferencia, mientras se está cargando.
   // No se persiste: apenas se cobra, lo que vale queda guardado en el pedido.
   const [mixtos, setMixtos] = useState<Record<number, { efectivo: string; transferencia: string }>>({})
@@ -407,6 +417,66 @@ export default function CajaPage() {
     const anduvo = await activarSonido()
     setSonidoConfirmado(anduvo)
     setSonidoBloqueado(!anduvo)
+  }
+
+  // La agenda se pide al abrir la pestaña y al cambiar de local. No se
+  // refresca sola: un contacto nuevo aparece volviendo a entrar a la pestaña,
+  // y no vale la pena pedir la lista entera cada quince segundos.
+  useEffect(() => {
+    if (tab !== 'contactos') return
+    let vigente = true
+    setCargandoContactos(true)
+    setErrorContactos(null)
+
+    fetch(`/api/admin/numeros?local=${local}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error(`GET /api/admin/numeros ${r.status}`)))
+      .then((data: Contacto[]) => { if (vigente) setContactos(data) })
+      .catch(err => {
+        console.error('[caja] no se pudo cargar la agenda:', err)
+        if (vigente) setErrorContactos('No se pudo cargar la lista de contactos.')
+      })
+      .finally(() => { if (vigente) setCargandoContactos(false) })
+
+    return () => { vigente = false }
+  }, [tab, local])
+
+  /**
+   * Los que se pueden mandar de verdad.
+   *
+   * En la agenda quedan registros con el teléfono incompleto o escrito de
+   * cualquier manera ("5493835" a secas, pruebas viejas). En pantalla se
+   * muestran igual —son clientes que pidieron— pero en una lista de difusión
+   * sólo ensucian: WhatsApp los rechaza de a uno y sin decir cuál.
+   */
+  const contactosValidos = contactos.filter(c => pareceCelular(c.telefono))
+
+  /**
+   * Pasa la agenda al portapapeles, un contacto por línea.
+   *
+   * `navigator.clipboard` sólo existe en HTTPS y en localhost; el respaldo con
+   * un textarea cubre el resto para que el botón no quede mudo.
+   */
+  async function copiarContactos() {
+    // En formato internacional y sin el +, que es lo que acepta una lista de
+    // difusión de WhatsApp. En pantalla el número se sigue viendo como lo dejó
+    // el cliente, que es con el que se lo reconoce.
+    const texto = contactosValidos
+      .map(c => `${c.cliente}: ${numeroDeWhatsapp(c.telefono)}`)
+      .join('\n')
+    try {
+      await navigator.clipboard.writeText(texto)
+    } catch {
+      const caja = document.createElement('textarea')
+      caja.value = texto
+      caja.style.position = 'fixed'
+      caja.style.opacity = '0'
+      document.body.appendChild(caja)
+      caja.select()
+      try { document.execCommand('copy') } catch {}
+      document.body.removeChild(caja)
+    }
+    setCopiado(true)
+    setTimeout(() => setCopiado(false), 2000)
   }
 
   // Suena cuando entra un pedido que caja todavía no tenía. Sobre todo son los
@@ -1397,6 +1467,26 @@ export default function CajaPage() {
           <p className="text-zinc-600 text-[10px] font-mono mb-4 mt-1">Sesión desde: {sesionLabel}</p>
         )}
 
+        {/* Pestañas */}
+        <div className="mb-5 flex gap-2">
+          {([
+            { id: 'pedidos',   label: '📋 Pedidos' },
+            { id: 'contactos', label: '📒 Contactos' },
+          ] as const).map(({ id, label }) => (
+            <button
+              key={id}
+              onClick={() => setTab(id)}
+              className={`flex-1 py-2.5 rounded-lg text-xs font-black uppercase tracking-widest transition ${
+                tab === id ? 'bg-zinc-700 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-zinc-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'pedidos' && (<>
+
         {/* Resumen de caja */}
         <div className="mb-6 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
@@ -1451,6 +1541,61 @@ export default function CajaPage() {
             )
           )}
         </div>
+
+        </>)}
+
+        {/* ── Contactos ── */}
+        {tab === 'contactos' && (
+          <div>
+            <div className="flex items-center gap-3 mb-4">
+              <span className="text-xs font-black uppercase tracking-widest text-zinc-500">
+                {contactos.length} {contactos.length === 1 ? 'contacto' : 'contactos'}
+              </span>
+              <span className="text-[10px] text-zinc-600 uppercase tracking-wider">
+                {local === 'andalgala' ? 'Andalgalá' : 'Belén'}
+              </span>
+
+              <button
+                onClick={copiarContactos}
+                disabled={contactosValidos.length === 0}
+                className="ml-auto rounded-lg bg-zinc-800 px-3 py-2 text-xs font-black uppercase tracking-wider text-zinc-300 transition hover:bg-zinc-700 hover:text-white disabled:opacity-40"
+              >
+                {copiado
+                  ? '✓ Copiado'
+                  : `📋 Copiar ${contactosValidos.length} ${contactosValidos.length === 1 ? 'contacto válido' : 'contactos válidos'}`}
+              </button>
+            </div>
+
+            {errorContactos && (
+              <p role="alert" className="mb-4 rounded bg-red-950 border border-red-600 px-4 py-3 text-sm font-bold text-red-200">
+                {errorContactos}
+              </p>
+            )}
+
+            {cargandoContactos ? (
+              <p className="text-zinc-600 text-center mt-16 text-sm font-bold uppercase tracking-widest">
+                Cargando…
+              </p>
+            ) : contactos.length === 0 && !errorContactos ? (
+              <p className="text-zinc-600 text-center mt-16 text-sm font-bold uppercase tracking-widest">
+                Todavía no hay clientes con teléfono
+              </p>
+            ) : (
+              <ul className="divide-y divide-zinc-800 rounded-lg bg-zinc-900">
+                {contactos.map(c => (
+                  <li key={c.telefono} className="flex items-center justify-between gap-3 px-4 py-2.5">
+                    <span className="truncate text-sm font-bold text-white uppercase tracking-wide">
+                      {c.cliente}
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums text-zinc-400">
+                      {c.telefono}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
       </main>
     </div>
   )
