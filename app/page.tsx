@@ -3,6 +3,7 @@ import DeliveryBanner from "@/components/DeliveryBanner";
 import HeroCarousel from "@/components/HeroCarousel";
 import HeroTagline from "@/components/HeroTagline";
 import IntroLocal from "@/components/IntroLocal";
+import PilaresLocal from "@/components/PilaresLocal";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -74,31 +75,15 @@ export default function HomePage() {
 
       {/* Intro */}
       <section className="max-w-4xl mx-auto px-4 py-16 text-center">
-        {/* Decoración: estrella en display grande */}
-        <div className="font-display text-8xl text-red-primary/10 leading-none select-none mb-2" aria-hidden>
-          ★
+        {/* Dos estrellas — los dos títulos de mejor hamburguesa */}
+        <div className="font-display text-8xl text-red-primary/10 leading-none select-none mb-2 tracking-widest" aria-hidden>
+          ★★
         </div>
         <h2 className="font-display text-5xl text-red-primary mb-5">
           Rock &apos;n&apos; roll de bar
         </h2>
         <IntroLocal />
-
-        {/* Tres pilares visuales */}
-        <div className="mt-10 grid grid-cols-3 gap-4">
-          {[
-            { emoji: "🍔", label: "Smash Burgers" },
-            { emoji: "🪵", label: "Horno de Barro" },
-            { emoji: "🤘", label: "Puro Rock" },
-          ].map(({ emoji, label }) => (
-            <div
-              key={label}
-              className="rounded-xl border-2 border-ink/10 py-5 px-3 flex flex-col items-center gap-2 hover:border-red-primary hover:shadow-md transition-all duration-200"
-            >
-              <span className="text-4xl leading-none">{emoji}</span>
-              <span className="font-display text-base text-ink/70">{label}</span>
-            </div>
-          ))}
-        </div>
+        <PilaresLocal />
       </section>
 
       <CheckeredDivider />
