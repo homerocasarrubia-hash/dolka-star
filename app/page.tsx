@@ -85,8 +85,6 @@ export default function HomePage() {
         <IntroLocal />
         <PilaresLocal />
       </section>
-
-      <CheckeredDivider />
     </>
   );
 }
