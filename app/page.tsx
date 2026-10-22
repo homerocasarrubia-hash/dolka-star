@@ -1,6 +1,7 @@
 import CheckeredDivider from "@/components/CheckeredDivider";
 import DeliveryBanner from "@/components/DeliveryBanner";
 import HeroCarousel from "@/components/HeroCarousel";
+import HeroTagline from "@/components/HeroTagline";
 import IntroLocal from "@/components/IntroLocal";
 import Image from "next/image";
 import Link from "next/link";
@@ -23,9 +24,7 @@ export default function HomePage() {
                 className="w-full max-w-[260px] sm:max-w-xs md:max-w-sm h-auto"
               />
             </div>
-            <p className="text-lg md:text-xl font-body mb-8 text-white/80">
-              Hamburguesas · Lomitos · Pizzas al horno de barro
-            </p>
+            <HeroTagline />
             {/*
               En celular son cuatro botones apilados, todos del mismo ancho.
               En escritorio los tres de siempre van en fila y DOLKA RUN queda

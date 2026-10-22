@@ -13,7 +13,7 @@ export default function DeliveryBanner() {
   if (!local.telefono) return null;
 
   return (
-    <div className="bg-red-primary text-white text-center py-5 px-4">
+    <div className="bg-ink text-white text-center py-5 px-4">
       <p className="font-display text-2xl md:text-3xl leading-tight">
         Llegamos a todo {local.ciudad}
       </p>
@@ -24,7 +24,7 @@ export default function DeliveryBanner() {
           el mensaje con todo escrito. */}
       <Link
         href="/menu"
-        className="inline-block bg-white text-red-primary font-display text-base px-6 py-2 rounded hover:bg-cream transition-colors"
+        className="inline-block bg-red-logo text-white font-display text-base px-6 py-2 rounded hover:bg-red-primary transition-colors"
       >
         HACER PEDIDO
       </Link>

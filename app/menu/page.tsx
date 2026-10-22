@@ -172,7 +172,7 @@ function ItemCard({
         // La nota del plato no se mostraba en ningún lado: estaba en los datos
         // y no llegaba a la carta. Va en ámbar y no en gris porque avisa cosas
         // que cambian el pedido, como hasta cuándo se consigue algo.
-        <p className="font-body text-xs font-semibold text-amber-600 mt-1.5">
+        <p className="font-body text-sm font-semibold text-amber-600 mt-1.5">
           ⚠ {item.nota}
         </p>
       )}
@@ -183,8 +183,8 @@ function ItemCard({
         // dice nada a nadie.
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
           {preciosVisibles(item).map(({ etiqueta, precio }) => (
-            <span key={etiqueta} className="font-display text-base">
-              <span className="text-ink/40">{etiqueta} </span>
+            <span key={etiqueta} className="font-display text-lg">
+              <span className="text-ink/60">{etiqueta} </span>
               <span className="text-red-primary">{formatPrecio(precio)}</span>
             </span>
           ))}
@@ -309,7 +309,7 @@ export default function MenuPage() {
                   }, {})
                 ).map(([grupo, items]) => (
                   <div key={grupo}>
-                    <h3 className="font-display text-xl text-ink/50 mb-3 uppercase tracking-wider">
+                    <h3 className="font-display text-xl text-ink/80 border-b-2 border-ink/20 pb-2 mb-3 uppercase tracking-wider">
                       {grupo}
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
