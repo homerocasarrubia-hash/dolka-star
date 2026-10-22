@@ -201,7 +201,7 @@ export const menu: MenuCategoria[] = [
         descripcion: "Especificar cuál al hacer el pedido",
         precios: { simple: 7000, doble: 8000 },
         variantes: { simple: "Vaso chico", doble: "Vaso grande" },
-        nota: "Vaso chico $7.000 · Vaso grande $8.000 — Solo consumo en el local",
+        nota: "Solo consumo en el local",
         grupo: "Tragos",
         soloEnLocal: true,
       },
