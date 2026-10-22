@@ -69,6 +69,7 @@ export default function Ranking({
         width={72}
         height={72}
         className="shrink-0"
+        style={{ filter: 'drop-shadow(0 0 8px rgba(255,158,44,0.7)) drop-shadow(0 0 20px rgba(255,158,44,0.3))' }}
       />
       <Titulo className="mt-2 shrink-0 text-[13px]">
         RANKING{local ? ` ${LOCALES[local].ciudad.toUpperCase()}` : ''}

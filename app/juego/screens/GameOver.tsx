@@ -103,12 +103,13 @@ export default function GameOver({
             src="/juego/sprites/game-over.png"
             alt="Game over"
             className="w-[78%] max-w-[260px] object-contain"
+            style={{ filter: 'drop-shadow(0 0 8px rgba(255,61,143,0.6)) drop-shadow(0 0 20px rgba(255,61,143,0.3))' }}
           />
         )}
 
         <p className="mt-4 uppercase tracking-widest opacity-60">Puntaje</p>
         <p
-          className={`${pixelFont.className} text-[34px] leading-none`}
+          className={`${pixelFont.className} text-[34px] leading-none ${esRecord ? 'animate-record-flash' : 'animate-neon-pulse'}`}
           style={{ color: esRecord ? PALETTE.pickup : PALETTE.accent }}
         >
           {score}

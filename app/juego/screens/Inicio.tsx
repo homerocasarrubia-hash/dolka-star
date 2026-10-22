@@ -35,6 +35,7 @@ export default function Inicio({
         src="/juego/sprites/logo-dolka-run.png"
         alt="Dolka Run"
         className="w-[72%] max-w-[240px] shrink-0 object-contain"
+        style={{ filter: 'drop-shadow(0 0 10px rgba(61,240,224,0.65)) drop-shadow(0 0 24px rgba(61,240,224,0.3))' }}
       />
 
       <div className="mt-3 shrink-0 text-center">

@@ -53,6 +53,15 @@ export function Pantalla({
           }}
         />
       )}
+      {/* Scanlines CRT — textura sutil que refuerza el mood retro-arcade */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(0deg, rgba(0,0,0,0.07) 0px, rgba(0,0,0,0.07) 1px, transparent 1px, transparent 3px)',
+        }}
+      />
       <div
         style={{ color: PALETTE.white }}
         className="relative flex h-full w-full flex-col items-center overflow-y-auto px-5 py-5 font-mono text-[11px]"
@@ -67,7 +76,10 @@ export function Titulo({ children, className = '' }: { children: ReactNode; clas
   return (
     <h1
       className={`${pixelFont.className} text-center leading-relaxed ${className}`}
-      style={{ color: PALETTE.accent }}
+      style={{
+        color: PALETTE.accent,
+        textShadow: `0 0 8px rgba(61,240,224,0.7), 0 0 20px rgba(61,240,224,0.3)`,
+      }}
     >
       {children}
     </h1>
@@ -95,12 +107,15 @@ export function Boton({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`${pixelFont.className} w-full border-2 px-3 py-3 text-[9px] leading-none transition-opacity hover:opacity-80 disabled:opacity-40`}
+      className={`${pixelFont.className} w-full border-2 px-3 py-3 text-[9px] leading-none transition-all duration-150 hover:scale-[1.02] hover:opacity-90 active:scale-[0.98] disabled:opacity-40 disabled:hover:scale-100`}
       style={{
         backgroundColor: primario ? PALETTE.accent : 'transparent',
         color: primario ? PALETTE.frame : PALETTE.white,
         borderColor: primario ? PALETTE.accent : PALETTE.white,
         borderRadius: 0,
+        boxShadow: primario
+          ? `0 0 10px rgba(61,240,224,0.55), 0 0 24px rgba(61,240,224,0.25)`
+          : 'none',
       }}
     >
       {children}
@@ -137,8 +152,22 @@ export function Campo({
       </span>
       <input
         {...props}
-        className="w-full border-2 bg-transparent px-2 py-2 font-mono text-[12px] outline-none"
-        style={{ borderColor: PALETTE.white, color: PALETTE.white, borderRadius: 0 }}
+        className="w-full border-2 bg-transparent px-2 py-2 font-mono text-[12px] outline-none transition-all duration-150 focus:border-[#3DF0E0]"
+        style={{
+          borderColor: PALETTE.white,
+          color: PALETTE.white,
+          borderRadius: 0,
+        }}
+        onFocus={(e) => {
+          e.currentTarget.style.borderColor = PALETTE.accent;
+          e.currentTarget.style.boxShadow = `0 0 8px rgba(61,240,224,0.4)`;
+          props.onFocus?.(e);
+        }}
+        onBlur={(e) => {
+          e.currentTarget.style.borderColor = PALETTE.white;
+          e.currentTarget.style.boxShadow = 'none';
+          props.onBlur?.(e);
+        }}
       />
       {ayuda && (
         <span className="mt-1 block leading-snug opacity-60" style={{ color: PALETTE.white }}>
