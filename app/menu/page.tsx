@@ -141,10 +141,9 @@ function ItemCard({
   return (
     <div className="bg-white rounded-lg p-4 shadow-sm border border-ink/5 flex flex-col">
       {item.etiqueta && (
-        <span
-          className="font-body text-[10px] font-bold uppercase tracking-wider mb-1 self-start"
-          style={{ color: "#75AADB" }}
-        >
+        // Rojo de marca: la etiqueta avisa que el plato va y viene (edición
+        // limitada, solo finde) y en celeste se perdía contra el resto.
+        <span className="font-body text-[10px] font-bold uppercase tracking-wider mb-1 self-start text-red-primary">
           {item.etiqueta}
         </span>
       )}
