@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { useLocal } from "./LocalProvider";
 
@@ -16,6 +17,7 @@ const navLinks = [
 export default function Header() {
   const [open, setOpen] = useState(false);
   const { local, abrirSelector } = useLocal();
+  const pathname = usePathname();
 
   /** Qué local se está mirando, con la puerta para cambiarlo. */
   const cambiarLocal = (
@@ -54,15 +56,22 @@ export default function Header() {
 
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-6">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm font-medium uppercase tracking-wider hover:text-red-primary transition-colors"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            const active = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className={`relative text-sm font-medium uppercase tracking-wider transition-colors pb-0.5 ${
+                  active
+                    ? "text-red-primary after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-red-primary after:rounded-full"
+                    : "hover:text-red-primary"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           <span className="w-px h-5 bg-white/15" aria-hidden />
           {cambiarLocal}
         </nav>
@@ -82,16 +91,21 @@ export default function Header() {
       {/* Mobile menu */}
       {open && (
         <nav className="md:hidden bg-ink border-t border-white/10 px-4 pb-4">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              onClick={() => setOpen(false)}
-              className="block py-3 text-sm font-medium uppercase tracking-wider hover:text-red-primary transition-colors"
-            >
-              {link.label}
-            </Link>
-          ))}
+          {navLinks.map((link) => {
+            const active = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                onClick={() => setOpen(false)}
+                className={`block py-3 text-sm font-medium uppercase tracking-wider transition-colors ${
+                  active ? "text-red-primary" : "hover:text-red-primary"
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
           <div className="pt-3 mt-1 border-t border-white/10">{cambiarLocal}</div>
         </nav>
       )}

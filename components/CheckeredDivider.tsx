@@ -1,7 +1,7 @@
 export default function CheckeredDivider() {
   return (
     <div
-      className="w-full h-6"
+      className="w-full h-8"
       style={{
         backgroundImage:
           "repeating-conic-gradient(#E2393C 0% 25%, #EEE7D4 0% 50%)",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CarritoDrawer from "@/components/CarritoDrawer";
 import CheckeredDivider from "@/components/CheckeredDivider";
 import { useLocal } from "@/components/LocalProvider";
@@ -139,7 +139,7 @@ function ItemCard({
   const opciones = opcionesDe(item, esBebida);
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-ink/5 flex flex-col">
+    <div className="bg-white rounded-lg p-4 shadow-sm border border-ink/5 flex flex-col transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
       {item.etiqueta && (
         // Rojo de marca: la etiqueta avisa que el plato va y viene (edición
         // limitada, solo finde) y en celeste se perdía contra el resto.
@@ -233,6 +233,26 @@ export default function MenuPage() {
   const [lineas, setLineas] = useState<Linea[]>([]);
   const [carritoAbierto, setCarritoAbierto] = useState(false);
 
+  // Categoría visible — se actualiza con IntersectionObserver para que la nav
+  // resalte el tab que corresponde a la sección que está en pantalla.
+  const [categoriaActiva, setCategoriaActiva] = useState<string>("");
+  const navRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu.length) return;
+    const opciones: IntersectionObserverInit = { rootMargin: "-30% 0px -60% 0px" };
+    const obs = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) setCategoriaActiva(entry.target.id);
+      }
+    }, opciones);
+    menu.forEach((c) => {
+      const el = document.getElementById(c.id);
+      if (el) obs.observe(el);
+    });
+    return () => obs.disconnect();
+  }, [menu]);
+
   const agregar = useCallback(
     (
       nombre: string,
@@ -273,17 +293,60 @@ export default function MenuPage() {
 
   const cantidad = cantidadTotal(lineas);
 
+  // Cuando cambia la categoría activa, mueve el tab correspondiente al centro
+  // del nav horizontal para que nunca quede fuera de vista.
+  useEffect(() => {
+    if (!navRef.current || !categoriaActiva) return;
+    const btn = navRef.current.querySelector<HTMLElement>(`[data-cat="${categoriaActiva}"]`);
+    btn?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [categoriaActiva]);
+
+  // Key para reanimar el botón cada vez que se agrega algo.
+  const [cartKey, setCartKey] = useState(0);
+  const prevCantidad = useRef(0);
+  useEffect(() => {
+    if (cantidad > prevCantidad.current) setCartKey((k) => k + 1);
+    prevCantidad.current = cantidad;
+  }, [cantidad]);
+
   return (
     <>
       <CheckeredDivider />
-      <section className="max-w-5xl mx-auto px-4 py-16">
+
+      {/* Nav horizontal de categorías — sticky bajo el header (h-16 = 64 px) */}
+      <div className="sticky top-16 z-40 bg-cream/95 backdrop-blur-sm border-b border-ink/10">
+        <div
+          ref={navRef}
+          className="max-w-5xl mx-auto px-4 py-3 flex gap-2 overflow-x-auto scrollbar-none"
+        >
+          {menu.map((categoria) => {
+            const active = categoriaActiva === categoria.id;
+            return (
+              <a
+                key={categoria.id}
+                href={`#${categoria.id}`}
+                data-cat={categoria.id}
+                className={`shrink-0 font-display text-sm px-4 py-1.5 rounded-full border transition-all duration-200 ${
+                  active
+                    ? "bg-red-primary text-white border-red-primary shadow-sm"
+                    : "border-ink/25 text-ink/70 hover:border-red-primary hover:text-red-primary"
+                }`}
+              >
+                {categoria.label}
+              </a>
+            );
+          })}
+        </div>
+      </div>
+
+      <section className="max-w-5xl mx-auto px-4 py-12">
         <h1 className="font-display text-5xl text-red-primary mb-2 text-center">Menú</h1>
         <p className="font-body text-center text-ink/50 text-sm mb-12">
           {local.direccion} · {local.horario}
         </p>
 
         {menu.map((categoria, idx) => (
-          <div key={categoria.id} id={categoria.id} className="mb-14">
+          <div key={categoria.id} id={categoria.id} className="mb-14 scroll-mt-32 animate-fade-in-up" style={{ animationDelay: `${idx * 60}ms` }}>
             <div className="mb-5">
               <h2 className="font-display text-3xl text-ink border-b-2 border-red-primary pb-2">
                 {categoria.label}
@@ -345,13 +408,16 @@ export default function MenuPage() {
       {/* Botón fijo: la carta es larga y el pedido tiene que estar siempre a
           un toque, sin volver arriba. */}
       <button
+        key={cartKey}
         type="button"
         onClick={() => setCarritoAbierto(true)}
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full bg-red-primary px-5 py-3 font-display text-base text-white shadow-lg transition-colors hover:bg-red-logo"
+        className={`fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full bg-red-primary px-5 py-3 font-display text-base text-white shadow-lg transition-colors hover:bg-red-logo hover:shadow-xl ${
+          cartKey > 0 ? "animate-cart-bounce" : ""
+        }`}
       >
         VER PEDIDO 🛒
         {cantidad > 0 && (
-          <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-sm text-red-primary">
+          <span className="ml-1 rounded-full bg-white px-2 py-0.5 text-sm text-red-primary font-bold">
             {cantidad}
           </span>
         )}
