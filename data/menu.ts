@@ -15,6 +15,19 @@ export type MenuItem = {
   precios?: Precios;  // cuando tiene variantes Simple/Doble/Triple
   nota?: string;
   grupo?: string;     // subcategoría interna (usado en Bebidas)
+  /**
+   * Cómo se llaman las variantes cuando no son Simple/Doble/Triple: un trago
+   * se vende por vaso chico o grande, no por "simple" o "doble".
+   */
+  variantes?: { simple: string; doble?: string; triple?: string };
+  /** Solo para consumir en el salón: no sale para retiro ni delivery. */
+  soloEnLocal?: boolean;
+  /**
+   * Elecciones que hay que hacer antes de agregarlo: el relleno de la Mata
+   * Bajón, por ejemplo. Todas valen lo mismo, lo que cambia es qué lleva
+   * adentro. Lo elegido viaja hasta la comanda.
+   */
+  opciones?: string[];
   etiqueta?: string;  // etiqueta destacada arriba del nombre (ej: "EDICIÓN LIMITADA")
 };
 
@@ -30,10 +43,11 @@ export const menu: MenuCategoria[] = [
     id: "hamburguesas",
     label: "Hamburguesas",
     items: [
-      { nombre: "Dolkaneta", descripcion: "Carne, muzzarella, bacon, huevo frito, cebolla caramelizada, alioli casero, pan de papa celeste", precios: { simple: 12000, doble: 15000, triple: 18000 }, etiqueta: "EDICIÓN LIMITADA" },
+      { nombre: "Dolkaneta", descripcion: "Carne, muzzarella, bacon, huevo frito, cebolla caramelizada, alioli casero, pan", precios: { simple: 12000, doble: 15000, triple: 18000 } },
+      { nombre: "Mata Monstruos", descripcion: "Carne smash, doble cheddar, barbacoa, bacon, tubitos Flamin' Hot, pan negro", precio: 9000, etiqueta: "EDICIÓN LIMITADA", nota: "Disponible hasta el 21 de noviembre" },
       { nombre: "Mega Dolka", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Smoke", descripcion: "Carne, cheddar, lechuga, tomate, bacon, huevo, cebolla morada", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Clásica", descripcion: "Carne, queso, jamón, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 } },
+      { nombre: "Hamburguesa Clásica", descripcion: "Carne, queso, jamón, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Dolka Simple", descripcion: "Carne, cheddar, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "DS Tasty", descripcion: "Carne, cheddar, lluvia de bacon, salsa tasty, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Cheese Burger", descripcion: "Carne, cheddar, bacon", precios: { simple: 11800, doble: 15000, triple: 18000 } },
@@ -44,11 +58,24 @@ export const menu: MenuCategoria[] = [
       { nombre: "Veggie", descripcion: "Medallón de verdura, queso tybo o cheddar, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Crispy Crispy", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla crispy", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Chily Hot", descripcion: "Carne, guacamole, nachos picante", precios: { simple: 11800, doble: 15000, triple: 18000 } },
+      {
+        nombre: "Mata Bajón",
+        descripcion: "Masa de pizza, queso fundido y relleno de burger a elección",
+        precio: 13500,
+        nota: "Solo viernes, sábado y domingo · Solo Andalgalá",
+        etiqueta: "SOLO FINDE",
+        opciones: [
+          "Mega Dolka", "Smoke", "Hamburguesa Clásica", "Dolka Simple",
+          "DS Tasty", "Cheese Burger", "Mero Mero", "DS Star", "Rockstar",
+          "Chicken", "Veggie", "Crispy Crispy", "Chily Hot", "Dolkaneta",
+        ],
+      },
     ],
   },
   {
     id: "pizzas",
     label: "Pizzas al horno de barro",
+    nota: "Solo disponibles viernes, sábado y domingo",
     items: [
       { nombre: "Margarita", descripcion: "Salsa de tomate, mozzarella, pesto de albahaca, tomates cherry, aceite de oliva, olivas negras, parmesano", precio: 12000 },
       { nombre: "Roquefort", descripcion: "Salsa de tomate, mozzarella, roquefort, aceite de oliva, olivas negras", precio: 12000 },
@@ -65,7 +92,7 @@ export const menu: MenuCategoria[] = [
     id: "lomos",
     label: "Lomos",
     items: [
-      { nombre: "Un Clásico", descripcion: "Lomo, jamón, queso, huevo, lechuga, tomate", precios: { simple: 15000, doble: 18500, triple: 22000 } },
+      { nombre: "Lomo Clásico", descripcion: "Lomo, jamón, queso, huevo, lechuga, tomate", precios: { simple: 15000, doble: 18500, triple: 22000 } },
       { nombre: "Mexicano", descripcion: "Lomo, queso, criolla, guacamole, lechuga, huevo", precios: { simple: 15000, doble: 18500, triple: 22000 } },
       { nombre: "Onion", descripcion: "Lomo, queso, cebolla caramelizada, lechuga, tomate, huevo", precios: { simple: 15000, doble: 18500, triple: 22000 } },
       { nombre: "Cheddar y Bacon", descripcion: "Lomo, queso, cheddar, bacon, cebolla, barbacoa, lechuga, tomate, huevo", precios: { simple: 15000, doble: 18500, triple: 22000 } },
@@ -166,9 +193,18 @@ export const menu: MenuCategoria[] = [
       { nombre: "Agua Mineral 1L", precio: 3500, grupo: "Aguas" },
       { nombre: "Aquarius 1/2L", precio: 3500, grupo: "Aguas" },
       { nombre: "Aquarius 1L", precio: 5000, grupo: "Aguas" },
-      { nombre: "Quilmes / Brahma / Salta", precio: 6500, grupo: "Cervezas" },
-      { nombre: "Heineken / Corona / Patagonia / Stella", precio: 8000, grupo: "Cervezas Premium" },
-      { nombre: "Brahma / Budweiser (lata)", precio: 4000, grupo: "Cervezas — Lata" },
+      { nombre: "Brahma / Budweiser / Quilmes (lata)", precio: 7000, grupo: "Cervezas" },
+      { nombre: "Corona Chica", precio: 5000, grupo: "Cervezas" },
+      { nombre: "Corona Grande / Stella Artois / Patagonia", precio: 8000, grupo: "Cervezas Premium" },
+      {
+        nombre: "Trago",
+        descripcion: "Especificar cuál al hacer el pedido",
+        precios: { simple: 7000, doble: 8000 },
+        variantes: { simple: "Vaso chico", doble: "Vaso grande" },
+        nota: "Vaso chico $7.000 · Vaso grande $8.000 — Solo consumo en el local",
+        grupo: "Tragos",
+        soloEnLocal: true,
+      },
     ],
   },
 ];
@@ -184,17 +220,27 @@ export const menu: MenuCategoria[] = [
 export function cartaDe(filtro: Carta): MenuCategoria[] {
   if (!filtro) return menu;
 
-  return filtro.categorias
-    .map((id) => {
-      const categoria = menu.find((c) => c.id === id);
+  // Dos formas de elegir: la lista de las que van (y en qué orden), o la lista
+  // de las que no van. La segunda es para el local que tiene casi todo.
+  const elegidas = filtro.categorias
+    ? filtro.categorias.map((id) => menu.find((c) => c.id === id))
+    : menu.filter((c) => !filtro.excluir?.includes(c.id));
+
+  return elegidas
+    .map((categoria) => {
       if (!categoria) return null;
 
-      const permitidos = filtro.soloItems?.[id];
-      if (!permitidos) return categoria;
+      const permitidos = filtro.soloItems?.[categoria.id];
+      const excluidos = filtro.excluirItems?.[categoria.id];
+      if (!permitidos && !excluidos) return categoria;
 
       return {
         ...categoria,
-        items: categoria.items.filter((item) => permitidos.includes(item.nombre)),
+        items: categoria.items.filter(
+          (item) =>
+            (!permitidos || permitidos.includes(item.nombre)) &&
+            !excluidos?.includes(item.nombre),
+        ),
       };
     })
     .filter((c): c is MenuCategoria => c !== null && c.items.length > 0);

@@ -43,6 +43,26 @@ function BotonMas({ onClick, etiqueta }: { onClick: () => void; etiqueta: string
 type Opcion = { etiqueta: string; nombre: string; precio: number; variante?: Variante };
 
 /**
+ * Los precios que se muestran en la tarjeta, ya etiquetados.
+ *
+ * Con las variantes de siempre alcanza la inicial (S · D · T); cuando el ítem
+ * las nombra, va el nombre completo.
+ */
+function preciosVisibles(item: MenuItem): { etiqueta: string; precio: number }[] {
+  if (!item.precios) return [];
+  const { simple, doble, triple } = item.precios;
+  const n = item.variantes;
+  const filas: [string, number | undefined][] = [
+    [n ? n.simple : "S", simple],
+    [n ? (n.doble ?? "Doble") : "D", doble],
+    [n ? (n.triple ?? "Triple") : "T", triple],
+  ];
+  return filas
+    .filter((f): f is [string, number] => f[1] !== undefined)
+    .map(([etiqueta, precio]) => ({ etiqueta, precio }));
+}
+
+/**
  * Las opciones que hay que elegir antes de agregar, si es que hay alguna.
  *
  * Dos casos distintos con la misma cara: los platos con Simple/Doble/Triple, y
@@ -51,12 +71,29 @@ type Opcion = { etiqueta: string; nombre: string; precio: number; variante?: Var
  * línea entre al carrito, porque el nombre que llega a la cocina cambia.
  */
 function opcionesDe(item: MenuItem, esBebida: boolean): Opcion[] {
+  // Un ítem que se arma eligiendo algo: todas las opciones valen lo mismo, lo
+  // que cambia es qué lleva. Va como variante y no como aclaración porque es
+  // parte de qué plato es: dos Mata Bajón con relleno distinto son dos líneas
+  // del pedido, y si fuera una aclaración el cliente podría borrarla al
+  // escribir "sin cebolla" y la cocina se quedaría sin saber cuál hacer.
+  if (item.opciones?.length && item.precio !== undefined) {
+    return item.opciones.map((opcion) => ({
+      etiqueta: opcion,
+      nombre: item.nombre,
+      precio: item.precio as number,
+      variante: `Relleno: ${opcion}`,
+    }));
+  }
+
   if (item.precios) {
     const { simple, doble, triple } = item.precios;
+    // Cada ítem puede nombrar sus variantes: un trago va por vaso chico o
+    // grande. El nombre elegido es el que después se lee en la comanda.
+    const nombres = item.variantes ?? { simple: "Simple", doble: "Doble", triple: "Triple" };
     const variantes: [Variante, number | undefined][] = [
-      ["Simple", simple],
-      ["Doble", doble],
-      ["Triple", triple],
+      [nombres.simple, simple],
+      [nombres.doble ?? "Doble", doble],
+      [nombres.triple ?? "Triple", triple],
     ];
     return variantes
       .filter((v): v is [Variante, number] => v[1] !== undefined)
@@ -88,7 +125,13 @@ function ItemCard({
 }: {
   item: MenuItem;
   esBebida: boolean;
-  onAgregar: (nombre: string, precio: number, variante?: Variante, esBebida?: boolean) => void;
+  onAgregar: (
+    nombre: string,
+    precio: number,
+    variante?: Variante,
+    esBebida?: boolean,
+    soloEnLocal?: boolean,
+  ) => void;
 }) {
   // El selector se abre en la misma card para no tapar la carta con un modal
   // por cada toque.
@@ -115,7 +158,9 @@ function ItemCard({
         ) : (
           item.precio !== undefined && (
             <BotonMas
-              onClick={() => onAgregar(item.nombre, item.precio as number, undefined, esBebida)}
+              onClick={() =>
+                onAgregar(item.nombre, item.precio as number, undefined, esBebida, item.soloEnLocal)
+              }
               etiqueta={`Agregar ${item.nombre} al pedido`}
             />
           )
@@ -124,24 +169,26 @@ function ItemCard({
       {item.descripcion && (
         <p className="font-body text-sm text-ink/60 mt-1 leading-relaxed flex-1">{item.descripcion}</p>
       )}
+      {item.nota && (
+        // La nota del plato no se mostraba en ningún lado: estaba en los datos
+        // y no llegaba a la carta. Va en ámbar y no en gris porque avisa cosas
+        // que cambian el pedido, como hasta cuándo se consigue algo.
+        <p className="font-body text-xs font-semibold text-amber-600 mt-1.5">
+          ⚠ {item.nota}
+        </p>
+      )}
       {item.precios && (
-        <div className="flex gap-4 mt-3">
-          <span className="font-display text-sm">
-            <span className="text-ink/40">S </span>
-            <span className="text-red-primary">{formatPrecio(item.precios.simple)}</span>
-          </span>
-          {item.precios.doble && (
-            <span className="font-display text-sm">
-              <span className="text-ink/40">D </span>
-              <span className="text-red-primary">{formatPrecio(item.precios.doble)}</span>
+        // Las iniciales S/D/T sólo se entienden en un plato que viene simple,
+        // doble o triple. Cuando el ítem nombra sus variantes —un trago va por
+        // vaso chico o grande— se escribe el nombre entero: "S $7.000" no le
+        // dice nada a nadie.
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+          {preciosVisibles(item).map(({ etiqueta, precio }) => (
+            <span key={etiqueta} className="font-display text-base">
+              <span className="text-ink/40">{etiqueta} </span>
+              <span className="text-red-primary">{formatPrecio(precio)}</span>
             </span>
-          )}
-          {item.precios.triple && (
-            <span className="font-display text-sm">
-              <span className="text-ink/40">T </span>
-              <span className="text-red-primary">{formatPrecio(item.precios.triple)}</span>
-            </span>
-          )}
+          ))}
         </div>
       )}
       {item.precio !== undefined && (
@@ -152,8 +199,8 @@ function ItemCard({
 
       {eligiendo && opciones.length > 0 && (
         <div className="mt-3 border-t border-ink/10 pt-3">
-          <p className="font-body text-xs uppercase tracking-wider text-ink/50 mb-2">
-            ¿Cuál agregamos?
+          <p className="font-body text-sm uppercase tracking-wider text-ink/50 mb-2">
+            {item.opciones?.length ? "¿Con qué relleno?" : "¿Cuál agregamos?"}
           </p>
           <div className="flex flex-wrap gap-2">
             {opciones.map((o) => (
@@ -161,10 +208,10 @@ function ItemCard({
                 key={o.etiqueta}
                 type="button"
                 onClick={() => {
-                  onAgregar(o.nombre, o.precio, o.variante, esBebida);
+                  onAgregar(o.nombre, o.precio, o.variante, esBebida, item.soloEnLocal);
                   setEligiendo(false);
                 }}
-                className="rounded border-2 border-red-primary px-3 py-2 font-display text-sm text-red-primary transition-colors hover:bg-red-primary hover:text-white"
+                className="rounded border-2 border-red-primary px-4 py-2 font-display text-base text-red-primary transition-colors hover:bg-red-primary hover:text-white"
               >
                 {o.etiqueta}
               </button>
@@ -188,14 +235,23 @@ export default function MenuPage() {
   const [carritoAbierto, setCarritoAbierto] = useState(false);
 
   const agregar = useCallback(
-    (nombre: string, precioUnitario: number, variante?: Variante, esBebida = false) => {
+    (
+      nombre: string,
+      precioUnitario: number,
+      variante?: Variante,
+      esBebida = false,
+      soloEnLocal = false,
+    ) => {
       const clave = claveDeLinea(nombre, variante);
       setLineas((actuales) => {
         const yaEsta = actuales.find((l) => l.clave === clave);
         if (yaEsta) {
           return actuales.map((l) => (l.clave === clave ? { ...l, cantidad: l.cantidad + 1 } : l));
         }
-        return [...actuales, { clave, nombre, variante, precioUnitario, cantidad: 1, esBebida }];
+        return [
+          ...actuales,
+          { clave, nombre, variante, precioUnitario, cantidad: 1, esBebida, soloEnLocal },
+        ];
       });
     },
     [],
@@ -234,7 +290,12 @@ export default function MenuPage() {
                 {categoria.label}
               </h2>
               {categoria.nota && (
-                <p className="font-body text-sm text-ink/60 mt-2 italic">{categoria.nota}</p>
+                // En ámbar y no en gris itálico: estas notas avisan cosas que
+                // cambian el pedido ("sólo fines de semana", "precio por
+                // docena") y en gris se leían como decoración.
+                <p className="font-body text-sm font-semibold text-amber-600 mt-2">
+                  ⚠ {categoria.nota}
+                </p>
               )}
             </div>
 

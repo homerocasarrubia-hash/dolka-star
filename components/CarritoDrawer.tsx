@@ -74,8 +74,21 @@ export default function CarritoDrawer({
   const nombreOk = cliente.trim().length >= 2;
   const telefonoOk = telefono.trim().replace(/\D/g, "").length >= 8;
   const direccionOk = modalidad !== "llevar" || direccion.trim().length >= 5;
+  /**
+   * Lo que sólo se sirve en el salón y está en un pedido que no es para el
+   * salón. El límite se chequea acá y no en la carta porque recién en este
+   * paso se sabe la modalidad: cuando el cliente mira el menú todavía no eligió
+   * si come acá, retira o pide delivery.
+   */
+  const soloDelSalon = modalidad === "local" ? [] : lineas.filter((l) => l.soloEnLocal);
+
   const puedeEnviar =
-    tomandoPedidos && lineas.length > 0 && nombreOk && telefonoOk && direccionOk;
+    tomandoPedidos &&
+    lineas.length > 0 &&
+    nombreOk &&
+    telefonoOk &&
+    direccionOk &&
+    soloDelSalon.length === 0;
 
   function cerrarYReset() {
     setError(null);
@@ -249,7 +262,7 @@ export default function CarritoDrawer({
                       placeholder="Aclaraciones (ej: sin tomate, sin cebolla...)"
                       aria-label={`Aclaraciones para ${l.nombre}`}
                       maxLength={140}
-                      className="mt-2 w-full rounded border border-ink/15 bg-cream/60 px-2 py-1.5 font-body text-sm text-ink outline-none placeholder:text-ink/40 focus:border-red-primary"
+                      className="mt-2 w-full rounded border border-ink/15 bg-cream/60 px-3 py-2 font-body text-base text-ink outline-none placeholder:text-ink/40 focus:border-red-primary"
                     />
                   )}
                 </li>
@@ -313,6 +326,30 @@ export default function CarritoDrawer({
                   ))}
                 </div>
               </fieldset>
+
+              {soloDelSalon.length > 0 && (
+                <div
+                  role="alert"
+                  className="rounded border border-amber-500 bg-amber-50 px-3 py-2.5"
+                >
+                  <p className="font-body text-sm font-semibold text-amber-700">
+                    ⚠ {soloDelSalon.map((l) => l.nombre).join(", ")}{" "}
+                    {soloDelSalon.length === 1 ? "se sirve" : "se sirven"} solo en el local.
+                  </p>
+                  <p className="font-body mt-1 text-xs text-amber-700/80">
+                    Elegí &ldquo;En el local&rdquo; o sacalo del pedido para poder enviarlo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      soloDelSalon.forEach((l) => onCambiarCantidad(l.clave, -l.cantidad))
+                    }
+                    className="mt-2 rounded border border-amber-600 px-3 py-1.5 font-body text-xs font-bold text-amber-700 transition-colors hover:bg-amber-600 hover:text-white"
+                  >
+                    Sacarlo del pedido
+                  </button>
+                </div>
+              )}
 
               {/* Dirección — solo para delivery */}
               {modalidad === "llevar" && (

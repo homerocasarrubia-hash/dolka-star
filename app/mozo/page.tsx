@@ -5,7 +5,8 @@ import { activarSonido, prepararSonido, sonar } from '@/lib/alerta'
 import BarraDePantalla from '@/components/BarraDePantalla'
 import { usePedidosEnVivo } from '@/lib/usePedidosEnVivo'
 import { inicioDelTurnoISO } from '@/lib/turno'
-import { menu, MenuItem, MenuCategoria } from '@/data/menu'
+import { cartaDe, menu, MenuItem } from '@/data/menu'
+import { esLocalId, LOCAL_POR_DEFECTO, LOCALES } from '@/data/locales'
 
 // ─────────────────────────────────────────
 // INTERFACES
@@ -75,33 +76,40 @@ const LABEL_CORTO: Record<string, string> = {
   bebidas:              'Bebidas',
 }
 
-// Categorías visibles por local (en orden)
-const CAT_IDS_POR_LOCAL: Record<string, string[]> = {
-  andalgala: [
-    'hamburguesas', 'pizzas', 'lomos', 'milanesas', 'milanesas-al-plato',
-    'empanadas', 'papas-nuggets', 'picadas', 'pastas', 'saludables', 'bebidas',
-  ],
-  belen: [
-    'hamburguesas', 'lomos', 'milanesas', 'milanesas-al-plato',
-    'papas-nuggets', 'bebidas',
-  ],
-}
-
-function cartaParaLocal(local: string): MenuCategoria[] {
-  const ids = CAT_IDS_POR_LOCAL[local] ?? CAT_IDS_POR_LOCAL.andalgala
-  return ids
-    .map(id => menu.find(c => c.id === id))
-    .filter((c): c is MenuCategoria => c != null)
+/**
+ * La carta que ve el mozo de ese local.
+ *
+ * Sale de `data/locales.ts`, igual que la del cliente. Acá había una segunda
+ * lista de categorías escrita a mano: al sacar empanadas y pastas de Andalgalá
+ * el cliente dejaba de verlas y el mozo las seguía teniendo, que es el tipo de
+ * diferencia que nadie nota hasta que alguien pide algo que no existe.
+ */
+function cartaParaLocal(local: string) {
+  return cartaDe(LOCALES[esLocalId(local) ? local : LOCAL_POR_DEFECTO].carta)
 }
 
 /** Convierte MenuItem.precios en array de variantes { nombre, precio } */
 function variantesDeItem(item: MenuItem): { nombre: string; precio: number }[] {
+  // Ítems que se arman eligiendo algo (el relleno de la Mata Bajón): todas las
+  // opciones salen lo mismo. Se cargan como variante, igual que en la carta del
+  // cliente, para que la comanda diga lo mismo la tome quien la tome.
+  if (item.opciones?.length && item.precio !== undefined) {
+    return item.opciones.map(opcion => ({
+      nombre: `Relleno: ${opcion}`,
+      precio: item.precio as number,
+    }))
+  }
+
   if (!item.precios) return []
+  // Los mismos nombres que ve el cliente: si un trago va por vaso chico o
+  // grande, el mozo tiene que cargarlo igual o la comanda sale distinta según
+  // quién la tomó.
+  const n = item.variantes ?? { simple: 'Simple', doble: 'Doble', triple: 'Triple' }
   const vs: { nombre: string; precio: number }[] = [
-    { nombre: 'Simple', precio: item.precios.simple },
+    { nombre: n.simple, precio: item.precios.simple },
   ]
-  if (item.precios.doble  != null) vs.push({ nombre: 'Doble',  precio: item.precios.doble })
-  if (item.precios.triple != null) vs.push({ nombre: 'Triple', precio: item.precios.triple })
+  if (item.precios.doble  != null) vs.push({ nombre: n.doble  ?? 'Doble',  precio: item.precios.doble })
+  if (item.precios.triple != null) vs.push({ nombre: n.triple ?? 'Triple', precio: item.precios.triple })
   return vs
 }
 

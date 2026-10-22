@@ -13,13 +13,29 @@ export type LocalId = "andalgala" | "belen";
  * `null` = la carta completa, tal cual está en data/menu.ts.
  */
 export type Carta = {
-  /** Categorías visibles, en este orden. */
-  categorias: string[];
+  /** Categorías visibles, en este orden. Si no está, se muestran todas. */
+  categorias?: string[];
+  /**
+   * Categorías que NO se muestran. Sirve para el local que tiene casi toda la
+   * carta: así, cuando se agrega una categoría nueva a `data/menu.ts`, aparece
+   * sola en vez de quedar invisible hasta que alguien la agregue también acá.
+   */
+  excluir?: string[];
   /**
    * Categorías que van recortadas: solo estos ítems, por nombre exacto.
    * Las categorías que no aparecen acá se muestran enteras.
    */
   soloItems?: Record<string, string[]>;
+  /**
+   * Ítems que ese local NO vende, por categoría y por nombre exacto.
+   *
+   * Es lo contrario de `soloItems` y para este caso es lo que corresponde:
+   * decir "Belén no hace la Mata Bajón" es una línea, mientras que listar con
+   * `soloItems` las quince hamburguesas que sí hace obliga a tocar los dos
+   * locales cada vez que se suma una hamburguesa nueva, y la que se olvide
+   * desaparece sin que nadie se entere.
+   */
+  excluirItems?: Record<string, string[]>;
 } | null;
 
 export type Local = {
@@ -64,8 +80,8 @@ export const LOCALES: Record<LocalId, Local> = {
     mapa: "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d3436.123456789!2d-66.3211!3d-27.5987!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x0%3A0x0!2sBelgrano+363%2C+Andalgal%C3%A1!5e0!3m2!1ses!2sar!4v1",
     intro:
       "En el corazón de Andalgalá, hacemos hamburguesas sin vueltas: buena carne, pan artesanal y sabor directo al hueso. También pizzas al horno de barro y lomitos que hablan por sí solos.",
-    // Andalgalá tiene la carta completa.
-    carta: null,
+    // Andalgalá tiene toda la carta menos estas dos.
+    carta: { excluir: ["empanadas", "pastas"] },
   },
   belen: {
     id: "belen",
@@ -85,6 +101,8 @@ export const LOCALES: Record<LocalId, Local> = {
     carta: {
       // Belén no hace pizzas, pastas ni empanadas. El resto va completo, con
       // los mismos ítems y precios que Andalgalá.
+      // Belén no hace la Mata Bajón: es de Andalgalá.
+      excluirItems: { hamburguesas: ["Mata Bajón"] },
       categorias: [
         "hamburguesas",
         "lomos",

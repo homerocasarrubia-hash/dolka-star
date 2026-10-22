@@ -6,7 +6,12 @@
 
 import type { Local } from "@/data/locales";
 
-export type Variante = "Simple" | "Doble" | "Triple";
+/**
+ * Cómo se pidió el plato: "Simple", "Doble", pero también "Vaso grande" o lo
+ * que use cada ítem. Es texto libre porque lo único que hace es viajar hasta la
+ * comanda: la cocina lee "Trago (Vaso grande)", no un código.
+ */
+export type Variante = string;
 
 export type Linea = {
   /** Identifica la línea: mismo plato con distinta variante son dos líneas. */
@@ -19,6 +24,8 @@ export type Linea = {
   aclaracion?: string;
   /** Las bebidas no llevan aclaraciones: no hay nada que sacarles. */
   esBebida?: boolean;
+  /** Solo se sirve en el salón: no sale para retiro ni para delivery. */
+  soloEnLocal?: boolean;
 };
 
 export type Modalidad = "local" | "llevar";
