@@ -76,10 +76,7 @@ export function Titulo({ children, className = '' }: { children: ReactNode; clas
   return (
     <h1
       className={`${pixelFont.className} text-center leading-relaxed ${className}`}
-      style={{
-        color: PALETTE.accent,
-        textShadow: `0 0 8px rgba(61,240,224,0.7), 0 0 20px rgba(61,240,224,0.3)`,
-      }}
+      style={{ color: PALETTE.accent }}
     >
       {children}
     </h1>
