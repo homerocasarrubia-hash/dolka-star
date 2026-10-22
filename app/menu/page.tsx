@@ -30,7 +30,7 @@ function BotonMas({ onClick, etiqueta }: { onClick: () => void; etiqueta: string
       type="button"
       onClick={onClick}
       aria-label={etiqueta}
-      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-primary text-white transition-colors hover:bg-red-logo ring-2 ring-ink"
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-primary text-white transition-colors hover:bg-red-logo ring-1 ring-ink"
     >
       <svg viewBox="0 0 12 12" aria-hidden className="h-4 w-4" fill="currentColor">
         <rect x="5" y="0" width="2" height="12" />
