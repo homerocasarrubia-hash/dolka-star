@@ -25,7 +25,7 @@ export default function PilaresLocal() {
         <Link
           key={label}
           href={href}
-          className="rounded-xl border-2 border-ink/10 py-5 px-3 flex items-center justify-center hover:border-red-primary hover:text-red-primary hover:shadow-md transition-all duration-200"
+          className="rounded-xl border-2 border-ink/10 py-4 px-3 flex items-center justify-center hover:border-red-primary hover:text-red-primary hover:shadow-md transition-all duration-200"
         >
           <span className="font-display text-base text-ink/70 group-hover:text-red-primary transition-colors">{label}</span>
         </Link>

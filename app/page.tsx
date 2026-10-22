@@ -74,7 +74,7 @@ export default function HomePage() {
       <CheckeredDivider />
 
       {/* Intro */}
-      <section className="max-w-4xl mx-auto px-4 py-16 text-center">
+      <section className="max-w-4xl mx-auto px-4 py-10 text-center">
         {/* Dos estrellas — los dos títulos de mejor hamburguesa */}
         <div className="font-display text-8xl text-red-primary/10 leading-none select-none mb-2 tracking-widest" aria-hidden>
           ★★
