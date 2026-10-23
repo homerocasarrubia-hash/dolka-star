@@ -43,7 +43,7 @@ export const menu: MenuCategoria[] = [
     id: "hamburguesas",
     label: "Hamburguesas",
     items: [
-      { nombre: "Mata Monstruos", descripcion: "Carne smash, doble cheddar, barbacoa, bacon, tubitos Flamin' Hot, pan negro", precios: { simple: 9000, doble: 12000, triple: 15000 }, etiqueta: "EDICIÓN LIMITADA", nota: "Disponible hasta el 21 de noviembre" },
+      { nombre: "Mata Monstruos", descripcion: "Carne smash, doble cheddar, barbacoa, bacon, tubitos Flamin' Hot, pan negro", precios: { simple: 9000, doble: 15000, triple: 18500 }, etiqueta: "EDICIÓN LIMITADA", nota: "Disponible hasta el 21 de noviembre" },
       { nombre: "Dolkaneta", descripcion: "Carne, muzzarella, bacon, huevo frito, cebolla caramelizada, alioli casero, pan", precios: { simple: 12000, doble: 15000, triple: 18000 } },
       { nombre: "Mega Dolka", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 } },
       { nombre: "Smoke", descripcion: "Carne, cheddar, lechuga, tomate, bacon, huevo, cebolla morada", precios: { simple: 11800, doble: 15000, triple: 18000 } },
