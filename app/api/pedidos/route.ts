@@ -184,15 +184,35 @@ export async function POST(req: NextRequest) {
   // puede estar mal, o la página puede haber quedado abierta desde ayer. Los del
   // local entran igual —el mozo carga pedidos cuando haga falta—, esto es sólo
   // para los del sitio.
-  if (!estaAbierto() && !(await rolDeLaCookie(req))) {
-    return NextResponse.json({ error: AVISO_CERRADO }, { status: 409 });
-  }
-
+  // Leer el body una sola vez (req.json() consume el stream).
   let body: unknown;
   try {
     body = await req.json();
   } catch {
     return malPedido("El cuerpo del pedido no es JSON válido.");
+  }
+
+  const esInternoRaw = await rolDeLaCookie(req);
+
+  if (!estaAbierto() && !esInternoRaw) {
+    return NextResponse.json({ error: AVISO_CERRADO }, { status: 409 });
+  }
+
+  // Verificar si el local está marcado como cerrado para hoy.
+  // Los pedidos del sitio (sin cookie) se bloquean; mozo y caja pasan igual.
+  if (!esInternoRaw) {
+    const localId = typeof body === "object" && body !== null
+      ? (body as Record<string, unknown>).local
+      : null;
+    if (typeof localId === "string") {
+      const config = await prisma.localConfig.findUnique({ where: { local: localId } });
+      if (config?.fechaCierre === etiquetaDelTurno()) {
+        return NextResponse.json(
+          { error: "El local está cerrado hoy. ¡Volvé mañana!" },
+          { status: 409 },
+        );
+      }
+    }
   }
 
   const revisado = validar(body);

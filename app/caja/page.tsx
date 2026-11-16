@@ -346,6 +346,10 @@ export default function CajaPage() {
   // No se persiste: apenas se cobra, lo que vale queda guardado en el pedido.
   const [mixtos, setMixtos] = useState<Record<number, { efectivo: string; transferencia: string }>>({})
 
+  // ── Hoy no abrimos ──
+  const [cerradoHoy, setCerradoHoy] = useState(false)
+  const [toggleandoCierre, setToggleandoCierre] = useState(false)
+
   // ── Persistir lo que sólo vive en caja, en localStorage ──
   //
   // El envío y el descuento cargados a mano se perdían al recargar la página:
@@ -407,6 +411,36 @@ export default function CajaPage() {
       setSesionInicio(inicioTurno.toISOString())
     }
   }, [local])
+
+  // Estado "Hoy no abrimos" — se carga del servidor al cambiar de local.
+  useEffect(() => {
+    let vigente = true
+    fetch(`/api/local-config?local=${local}`)
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then((d: { cerradoHoy: boolean }) => { if (vigente) setCerradoHoy(d.cerradoHoy) })
+      .catch(() => {}) // sin error visible: el botón queda en el último estado conocido
+    return () => { vigente = false }
+  }, [local])
+
+  async function toggleCierre() {
+    if (toggleandoCierre) return
+    setToggleandoCierre(true)
+    const nuevo = !cerradoHoy
+    try {
+      const res = await fetch('/api/local-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ local, cerrar: nuevo }),
+      })
+      if (!res.ok) throw new Error(`POST /api/local-config ${res.status}`)
+      setCerradoHoy(nuevo)
+    } catch (err) {
+      console.error('[caja] no se pudo cambiar el estado del local', err)
+      setError('No se pudo cambiar el estado del local. Intentá de nuevo.')
+    } finally {
+      setToggleandoCierre(false)
+    }
+  }
 
   // El navegador no deja sonar nada hasta que alguien toca la pantalla.
   // Además se destraba solo con el primer toque en cualquier parte, por si
@@ -1419,6 +1453,19 @@ export default function CajaPage() {
             <span className="font-black text-white uppercase tracking-widest text-lg">Caja</span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Hoy no abrimos — bloquea pedidos del sitio para este local */}
+            <button
+              onClick={toggleCierre}
+              disabled={toggleandoCierre}
+              title={cerradoHoy ? 'El local está cerrado hoy — tocá para abrir' : 'Tocar para cerrar el local hoy'}
+              className={`text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg border transition disabled:opacity-50 ${
+                cerradoHoy
+                  ? 'bg-amber-600 border-amber-500 text-black hover:bg-amber-500'
+                  : 'bg-zinc-800 border-zinc-700 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+              }`}
+            >
+              {cerradoHoy ? '🚫 Cerrado hoy' : '✅ Abierto hoy'}
+            </button>
             <button onClick={() => setConfirmandoCerrar(true)}
               className="text-xs font-black uppercase tracking-wider px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-red-900 border border-zinc-700 hover:border-red-700 text-zinc-400 hover:text-white transition"
               title="Cerrar caja del día">

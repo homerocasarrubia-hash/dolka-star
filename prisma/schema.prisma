@@ -39,6 +39,19 @@ model Score {
   @@index([playerId])
 }
 
+/**
+ * Estado operativo de cada local.
+ *
+ * `fechaCierre` guarda la etiqueta del turno en que se bloquearon pedidos
+ * (ej: "2026-11-16"). Si coincide con el turno actual → el local está cerrado
+ * y no se aceptan nuevos pedidos. Al día siguiente el turno cambia y el bloqueo
+ * expira automáticamente sin intervención manual.
+ */
+model LocalConfig {
+  local       String  @id
+  fechaCierre String? // turno bloqueado, null = abierto
+}
+
 model Pedido {
   id         Int      @id @default(autoincrement())
   /// Número de comanda que se canta en el local: arranca en 1 cada turno.
