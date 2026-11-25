@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useRef, useState } from "react";
 import CarritoDrawer from "@/components/CarritoDrawer";
 import CheckeredDivider from "@/components/CheckeredDivider";
@@ -139,7 +140,19 @@ function ItemCard({
   const opciones = opcionesDe(item, esBebida);
 
   return (
-    <div className="bg-white rounded-lg p-4 shadow-sm border border-ink/5 flex flex-col transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5">
+    <div className="bg-white rounded-lg shadow-sm border border-ink/5 flex flex-col transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 overflow-hidden">
+      {item.imagen && (
+        <div className="relative w-full bg-cream">
+          <Image
+            src={item.imagen}
+            alt={item.nombre}
+            width={800}
+            height={800}
+            className="w-full h-48 object-contain"
+          />
+        </div>
+      )}
+      <div className="p-4 flex flex-col flex-1">
       {item.etiqueta && (
         // Rojo de marca: la etiqueta avisa que el plato va y viene (edición
         // limitada, solo finde) y en celeste se perdía contra el resto.
@@ -218,6 +231,7 @@ function ItemCard({
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }
