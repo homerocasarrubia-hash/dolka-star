@@ -141,76 +141,71 @@ function ItemCard({
 
   return (
     <div className="bg-white rounded-lg shadow-sm border border-ink/5 flex flex-col transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 overflow-hidden">
-      {item.imagen && (
-        <div className="relative w-full bg-cream">
-          <Image
-            src={item.imagen}
-            alt={item.nombre}
-            width={800}
-            height={800}
-            className="w-full h-48 object-contain"
-          />
-        </div>
-      )}
-      <div className="p-4 flex flex-col flex-1">
-      {item.etiqueta && (
-        // Rojo de marca: la etiqueta avisa que el plato va y viene (edición
-        // limitada, solo finde) y en celeste se perdía contra el resto.
-        <span className="font-body text-[10px] font-bold uppercase tracking-wider mb-1 self-start text-red-primary">
-          {item.etiqueta}
-        </span>
-      )}
-      <div className="flex items-start gap-3">
-        <h3 className="font-display text-lg text-ink leading-tight flex-1">{item.nombre}</h3>
-        {opciones.length > 0 ? (
-          <BotonMas
-            onClick={() => setEligiendo((v) => !v)}
-            etiqueta={`Elegir opción de ${item.nombre}`}
-          />
-        ) : (
-          item.precio !== undefined && (
-            <BotonMas
-              onClick={() =>
-                onAgregar(item.nombre, item.precio as number, undefined, esBebida, item.soloEnLocal)
-              }
-              etiqueta={`Agregar ${item.nombre} al pedido`}
+      {/* Fila principal: foto a la izquierda + contenido a la derecha */}
+      <div className="flex gap-3 p-4">
+        {item.imagen && (
+          <div className="shrink-0 w-28 h-28 bg-cream rounded-md overflow-hidden">
+            <Image
+              src={item.imagen}
+              alt={item.nombre}
+              width={800}
+              height={800}
+              className="w-full h-full object-contain"
             />
-          )
+          </div>
         )}
-      </div>
-      {item.descripcion && (
-        <p className="font-body text-sm text-ink/60 mt-1 leading-relaxed flex-1">{item.descripcion}</p>
-      )}
-      {item.nota && (
-        // La nota del plato no se mostraba en ningún lado: estaba en los datos
-        // y no llegaba a la carta. Va en ámbar y no en gris porque avisa cosas
-        // que cambian el pedido, como hasta cuándo se consigue algo.
-        <p className="font-body text-sm font-semibold text-amber-600 mt-1.5">
-          ⚠ {item.nota}
-        </p>
-      )}
-      {item.precios && (
-        // Las iniciales S/D/T sólo se entienden en un plato que viene simple,
-        // doble o triple. Cuando el ítem nombra sus variantes —un trago va por
-        // vaso chico o grande— se escribe el nombre entero: "S $7.000" no le
-        // dice nada a nadie.
-        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
-          {preciosVisibles(item).map(({ etiqueta, precio }) => (
-            <span key={etiqueta} className="font-display text-lg">
-              <span className="text-ink/60">{etiqueta} </span>
-              <span className="text-red-primary">{formatPrecio(precio)}</span>
+        <div className="flex flex-col flex-1 min-w-0">
+          {item.etiqueta && (
+            <span className="font-body text-[10px] font-bold uppercase tracking-wider mb-1 self-start text-red-primary">
+              {item.etiqueta}
             </span>
-          ))}
+          )}
+          <div className="flex items-start gap-3">
+            <h3 className="font-display text-lg text-ink leading-tight flex-1">{item.nombre}</h3>
+            {opciones.length > 0 ? (
+              <BotonMas
+                onClick={() => setEligiendo((v) => !v)}
+                etiqueta={`Elegir opción de ${item.nombre}`}
+              />
+            ) : (
+              item.precio !== undefined && (
+                <BotonMas
+                  onClick={() =>
+                    onAgregar(item.nombre, item.precio as number, undefined, esBebida, item.soloEnLocal)
+                  }
+                  etiqueta={`Agregar ${item.nombre} al pedido`}
+                />
+              )
+            )}
+          </div>
+          {item.descripcion && (
+            <p className="font-body text-sm text-ink/60 mt-1 leading-relaxed">{item.descripcion}</p>
+          )}
+          {item.nota && (
+            <p className="font-body text-sm font-semibold text-amber-600 mt-1.5">
+              ⚠ {item.nota}
+            </p>
+          )}
+          {item.precios && (
+            <div className="flex flex-wrap gap-x-3 gap-y-1 mt-2">
+              {preciosVisibles(item).map(({ etiqueta, precio }) => (
+                <span key={etiqueta} className="font-display text-base">
+                  <span className="text-ink/60">{etiqueta} </span>
+                  <span className="text-red-primary">{formatPrecio(precio)}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          {item.precio !== undefined && (
+            <p className="font-display text-base text-red-primary mt-1.5">
+              {formatPrecio(item.precio)}
+            </p>
+          )}
         </div>
-      )}
-      {item.precio !== undefined && (
-        <p className="font-display text-lg text-red-primary mt-2">
-          {formatPrecio(item.precio)}
-        </p>
-      )}
+      </div>
 
       {eligiendo && opciones.length > 0 && (
-        <div className="mt-3 border-t border-ink/10 pt-3">
+        <div className="mx-4 mb-4 border-t border-ink/10 pt-3">
           <p className="font-body text-sm uppercase tracking-wider text-ink/50 mb-2">
             {item.opciones?.length ? "¿Con qué relleno?" : "¿Cuál agregamos?"}
           </p>
@@ -231,7 +226,6 @@ function ItemCard({
           </div>
         </div>
       )}
-      </div>
     </div>
   );
 }
