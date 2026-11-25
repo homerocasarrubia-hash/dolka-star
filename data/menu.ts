@@ -29,6 +29,8 @@ export type MenuItem = {
    */
   opciones?: string[];
   etiqueta?: string;  // etiqueta destacada arriba del nombre (ej: "EDICIÓN LIMITADA")
+  /** Ruta a la foto del producto (relativa a /public). PNG con fondo transparente. */
+  imagen?: string;
 };
 
 export type MenuCategoria = {
@@ -43,27 +45,28 @@ export const menu: MenuCategoria[] = [
     id: "hamburguesas",
     label: "Hamburguesas",
     items: [
-      { nombre: "Mata Monstruos", descripcion: "Carne smash, doble cheddar, barbacoa, bacon, tubitos Flamin' Hot, pan negro", precios: { simple: 9000, doble: 15000, triple: 18500 }, etiqueta: "EDICIÓN LIMITADA", nota: "Disponible hasta el 21 de noviembre" },
-      { nombre: "Dolkaneta", descripcion: "Carne, muzzarella, bacon, huevo frito, cebolla caramelizada, alioli casero, pan", precios: { simple: 12000, doble: 15000, triple: 18000 } },
-      { nombre: "Mega Dolka", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Smoke", descripcion: "Carne, cheddar, lechuga, tomate, bacon, huevo, cebolla morada", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Hamburguesa Clásica", descripcion: "Carne, queso, jamón, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Dolka Simple", descripcion: "Carne, cheddar, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "DS Tasty", descripcion: "Carne, cheddar, lluvia de bacon, salsa tasty, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Cheese Burger", descripcion: "Carne, cheddar, bacon", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Mero Mero", descripcion: "Carne, queso, criollita, paleta, bacon, huevo frito", precios: { simple: 12500, doble: 15000, triple: 18000 } },
-      { nombre: "DS Star", descripcion: "Carne, cheddar, bacon, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Rockstar", descripcion: "Carne, lechuga, tomate, huevo, queso roquefort, bacon", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Chicken", descripcion: "Pollo frito, cheddar, bacon, pepinillos, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Veggie", descripcion: "Medallón de verdura, queso tybo o cheddar, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Crispy Crispy", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla crispy", precios: { simple: 11800, doble: 15000, triple: 18000 } },
-      { nombre: "Chily Hot", descripcion: "Carne, guacamole, nachos picante", precios: { simple: 11800, doble: 15000, triple: 18000 } },
+      { nombre: "Mata Monstruos", descripcion: "Carne smash, doble cheddar, barbacoa, bacon, tubitos Flamin' Hot, pan negro", precios: { simple: 9000, doble: 15000, triple: 18500 }, etiqueta: "EDICIÓN LIMITADA", nota: "Disponible hasta el 21 de noviembre", imagen: "/assets/burgers/mata-monstruos.png" },
+      { nombre: "Dolkaneta", descripcion: "Carne, muzzarella, bacon, huevo frito, cebolla caramelizada, alioli casero, pan", precios: { simple: 12000, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/dolkaneta.png" },
+      { nombre: "Mega Dolka", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/mega-dolka.png" },
+      { nombre: "Smoke", descripcion: "Carne, cheddar, lechuga, tomate, bacon, huevo, cebolla morada", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/smoke.png" },
+      { nombre: "Hamburguesa Clásica", descripcion: "Carne, queso, jamón, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/hamburguesa-clasica.png" },
+      { nombre: "Dolka Simple", descripcion: "Carne, cheddar, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/dolka-simple.png" },
+      { nombre: "DS Tasty", descripcion: "Carne, cheddar, lluvia de bacon, salsa tasty, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/ds-tasty.png" },
+      { nombre: "Cheese Burger", descripcion: "Carne, cheddar, bacon", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/cheese-burger.png" },
+      { nombre: "Mero Mero", descripcion: "Carne, queso, criollita, paleta, bacon, huevo frito", precios: { simple: 12500, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/mero-mero.png" },
+      { nombre: "DS Star", descripcion: "Carne, cheddar, bacon, pepinillos", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/ds-star.png" },
+      { nombre: "Rockstar", descripcion: "Carne, lechuga, tomate, huevo, queso roquefort, bacon", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/rockstar.png" },
+      { nombre: "Chicken", descripcion: "Pollo frito, cheddar, bacon, pepinillos, lechuga, tomate", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/chicken.png" },
+      { nombre: "Veggie", descripcion: "Medallón de verdura, queso tybo o cheddar, lechuga, tomate, huevo", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/veggie.png" },
+      { nombre: "Crispy Crispy", descripcion: "Carne, cheddar, bacon, barbacoa, cebolla crispy", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/crispy-crispy.png" },
+      { nombre: "Chily Hot", descripcion: "Carne, guacamole, nachos picante", precios: { simple: 11800, doble: 15000, triple: 18000 }, imagen: "/assets/burgers/chily-hot.png" },
       {
         nombre: "Mata Bajón",
         descripcion: "Masa de pizza, queso fundido y relleno de burger a elección",
         precio: 13500,
         nota: "Solo viernes, sábado y domingo · Solo Andalgalá",
         etiqueta: "SOLO FINDE",
+        imagen: "/assets/burgers/mata-bajon.png",
         opciones: [
           "Mega Dolka", "Smoke", "Hamburguesa Clásica", "Dolka Simple",
           "DS Tasty", "Cheese Burger", "Mero Mero", "DS Star", "Rockstar",
